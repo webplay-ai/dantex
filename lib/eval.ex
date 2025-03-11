@@ -4,7 +4,7 @@ defmodule Dantex.Eval do
   """
 
   alias Dantex.Agent
-  alias Dantex.Eval.{TestCase, Metric}
+  alias Dantex.Eval.{TestCase, Metric, RegexMatchMetric}
   require Logger
 
   @doc """
@@ -51,11 +51,12 @@ defmodule Dantex.Eval do
         # Get the actual output and update the test case
         updated_test_case = %{test_case | actual_output: response.content}
 
+        # TODO we need to make this more flexible for differen metric types
         # Calculate the score using the metric
-        score = metric.score(metric, updated_test_case)
+        score = RegexMatchMetric.score(metric, updated_test_case)
 
         # Determine pass/fail status
-        pass = metric.score(score)
+        pass = RegexMatchMetric.pass(score)
 
         # Get tokens used - this would need to be extended when actual token
         # information is available from Model.chat_completion
@@ -106,72 +107,85 @@ defmodule Dantex.Eval do
       ...>   Dantex.Eval.TestCase.new([Dantex.Message.user("What is 3+3?")], "6")
       ...> ]
       iex> agent = Dantex.Agent.new(:openai, "gpt-4")
-      iex> {:ok, results} = Dantex.Eval.run_all(agent, test_cases, metric, results_path: "./results")
+      iex> {:ok, results} = Dantex.Eval.run_all(results_path, agent, test_cases, metric)
   """
-  @spec run_all(Agent.t(), [TestCase.t()], Metric.t(), keyword()) ::
-          {:ok, [{:ok, TestCase.t()} | {:error, term()}]} | {:error, term()}
-  def run_all(%Agent{} = agent, test_cases, metric, opts \\ []) when is_list(test_cases) do
-    # Check if results_path is provided, raise error if not
-    results_path =
-      case Keyword.fetch(opts, :results_path) do
-        {:ok, path} -> path
-        :error -> raise ArgumentError, "results_path is required for run_all"
-      end
+  @spec run_all(String.t(), Agent.t(), Metric.t(), [TestCase.t()]) ::
+          {:ok, [TestCase.t()]} | {:error, term()}
+  def run_all(results_path, %Agent{} = agent, metric, test_cases) when is_list(test_cases) do
 
     # Run each test case and collect results
     test_case_results =
       Enum.map(test_cases, fn test_case ->
-        Logger.info("Running test case: #{inspect(test_case.id || "unknown")}")
-        run(agent, test_case, metric)
+        case run(agent, test_case, metric) do
+          {:ok, result} -> {:ok, result}
+          {:error, error} ->
+            Logger.error("Test case failed: #{inspect(error)}")
+            {:error, error}
+        end
       end)
 
-    # Print results if requested
-    if length(test_case_results) > 0 do
-      case print_html_results(results_path, agent, metric, test_case_results) do
-        {:ok} ->
-          Logger.info("Results printed to #{results_path}")
+    error_index = Enum.find_index(test_case_results, fn result ->
+      match?({:error, _}, result)
+    end)
 
-        {:error, reason} ->
-          Logger.error("Failed to print results: #{inspect(reason)}")
-      end
+    case error_index do
+      nil ->
+        # Strip the ok/error atoms and ensure only TestCase.t() elements
+        test_cases =
+          Enum.map(test_case_results, fn
+            {:ok, result} -> result
+            _ -> nil # Skip errors or unexpected cases
+          end)
+          |> Enum.filter(&(&1 != nil))
 
-      # Print summary to console
-      print_console_summary(test_case_results)
+        # Print summary to console
+        print_console_summary(test_cases)
+        print_html_results(results_path, agent, metric, test_cases)
+        {:ok, test_case_results}
+
+      _ ->
+        {:error, "Evaluation failed for one or more test cases"}
     end
-
-    {:ok, test_case_results}
   end
 
   # Helper function to print a summary to the console
   @spec print_console_summary([TestCase.t()]) :: nil
   defp print_console_summary(test_cases) do
     total_tests = length(test_cases)
-    passed_tests = Enum.count(test_cases, & &1.pass)
-    overall_score = if total_tests > 0, do: passed_tests / total_tests * 100, else: 0
+    passed_tests = Enum.count(test_cases, fn
+      %Dantex.Eval.TestCase{pass: pass} -> pass
+      _ -> false
+    end)
+    overall_score = if total_tests > 0, do: passed_tests / total_tests * 100, else: 0.0
 
     total_tokens =
-      Enum.reduce(test_cases, 0, fn test_case, acc -> (test_case.tokens || 0) + acc end)
+      Enum.reduce(test_cases, 0, fn
+        %Dantex.Eval.TestCase{tokens: tokens}, acc -> (tokens || 0) + acc
+        _ , acc -> acc
+      end)
 
     IO.puts("\n=== Evaluation Summary ===")
-
     IO.puts(
       "Tests: #{total_tests} | Passed: #{passed_tests} | Failed: #{total_tests - passed_tests}"
     )
-
-    IO.puts("Overall Score: #{Float.round(overall_score, 2)}%")
+    # Ensure we're passing floats to Float.round
+    formatted_score = if is_integer(overall_score), do: overall_score * 1.0, else: overall_score
+    estimated_cost = total_tokens / 1000 * 0.01
+    IO.puts("Overall Score: #{Float.round(formatted_score, 2)}%")
     IO.puts("Total Tokens: #{total_tokens}")
-    IO.puts("Estimated Cost: $#{Float.round(total_tokens / 1000 * 0.01, 4)} USD")
+    IO.puts("Estimated Cost: $#{Float.round(estimated_cost, 4)} USD")
     IO.puts("========================\n")
+    nil
   end
 
   @spec print_html_results(String.t(), Agent.t(), Metric.t(), [TestCase.t()]) ::
           {:ok} | {:error, term()}
-  def print_html_results(path, %Agent{} = agent, metric, test_cases) do
+  def print_html_results(path, %Agent{model: model }, _metric, test_cases) do
     try do
       # Calculate overall statistics
       total_tests = length(test_cases)
       passed_tests = Enum.count(test_cases, & &1.pass)
-      overall_score = if total_tests > 0, do: passed_tests / total_tests, else: 0
+      overall_score = if total_tests > 0, do: passed_tests / total_tests, else: 0.0
 
       total_tokens =
         Enum.reduce(test_cases, 0, fn test_case, acc -> (test_case.tokens || 0) + acc end)
@@ -180,10 +194,18 @@ defmodule Dantex.Eval do
       estimated_cost = total_tokens / 1000 * 0.01
 
       # Generate timestamp and filename
-      timestamp = DateTime.utc_now() |> DateTime.to_string() |> String.replace(~r/[:\s]/, "_")
-      provider = agent.model.provider |> to_string()
-      model_name = agent.model.name
-      filename = "#{timestamp}_#{provider}-#{model_name}_results.html"
+      # Format timestamp as YYYY-MM-DD_HH-MM for shorter filenames
+      timestamp = DateTime.utc_now()
+                  |> Calendar.strftime("%Y-%m-%d_%H-%M")
+
+      # Extract just the provider name without the Elixir.Dantex.Providers prefix
+      provider_full = model.provider |> to_string()
+      provider = provider_full
+                 |> String.split(".")
+                 |> List.last()
+
+      model_name = model.model
+      filename = "#{timestamp}_#{provider}-#{model_name}.html"
       full_path = Path.join(path, filename)
 
       # Create HTML content
@@ -213,7 +235,7 @@ defmodule Dantex.Eval do
         <div class="summary">
           <h2>Evaluation Summary</h2>
           <div class="summary-item"><strong>Provider/Model:</strong> #{provider}/#{model_name}</div>
-          <div class="summary-item"><strong>Metric:</strong> #{metric |> to_string() |> String.split(".") |> List.last()}</div>
+          <div class="summary-item"><strong>Metric:</strong> #{"RegexMatch" |> to_string() |> String.split(".") |> List.last()}</div>
           <div class="summary-item"><strong>Overall Score:</strong> #{Float.round(overall_score * 100, 2)}% (#{passed_tests}/#{total_tests} tests passed)</div>
           <div class="summary-item"><strong>Total Tokens Used:</strong> #{total_tokens}</div>
           <div class="summary-item"><strong>Estimated Cost:</strong> $#{Float.round(estimated_cost, 4)} USD</div>
@@ -263,22 +285,27 @@ defmodule Dantex.Eval do
       end
     rescue
       e ->
+        Logger.error("Failed to generate results #{inspect(e)}")
         {:error, e}
     end
   end
 
   # Helper function to generate table rows for each test case
-  defp generate_table_rows(test_cases) do
+  # @doc false - Exposed for testing
+  def generate_table_rows(test_cases) do
     test_cases
     |> Enum.with_index(1)
     |> Enum.map(fn {test_case, index} ->
       input_text = format_messages(test_case.input)
       expected = test_case.expected_output || "N/A"
       actual = test_case.actual_output || "N/A"
-      score = test_case.score || 0
+      score = test_case.score || 0.0
       pass_class = if test_case.pass, do: "pass", else: "fail"
       pass_text = if test_case.pass, do: "PASS", else: "FAIL"
       tokens = test_case.tokens || 0
+
+      # Format score - handle both integers and floats
+      formatted_score = if is_integer(score), do: score * 1.0, else: Float.round(score, 2)
 
       """
       <tr>
@@ -286,7 +313,7 @@ defmodule Dantex.Eval do
         <td><pre>#{html_escape(input_text)}</pre></td>
         <td><pre>#{html_escape(expected)}</pre></td>
         <td><pre>#{html_escape(actual)}</pre></td>
-        <td>#{Float.round(score, 2)}</td>
+        <td>#{formatted_score}</td>
         <td class="#{pass_class}">#{pass_text}</td>
         <td>#{tokens}</td>
       </tr>
@@ -296,7 +323,8 @@ defmodule Dantex.Eval do
   end
 
   # Helper function to format messages for display
-  defp format_messages(messages) do
+  # @doc false - Exposed for testing
+  def format_messages(messages) do
     messages
     |> Enum.map(fn msg ->
       role = Map.get(msg, :role, "unknown")
@@ -307,7 +335,8 @@ defmodule Dantex.Eval do
   end
 
   # Helper function to escape HTML special characters
-  defp html_escape(text) when is_binary(text) do
+  # @doc false - Exposed for testing
+  def html_escape(text) when is_binary(text) do
     text
     |> String.replace("&", "&amp;")
     |> String.replace("<", "&lt;")
@@ -315,6 +344,6 @@ defmodule Dantex.Eval do
     |> String.replace("\"", "&quot;")
   end
 
-  defp html_escape(nil), do: ""
-  defp html_escape(other), do: html_escape(to_string(other))
+  def html_escape(nil), do: ""
+  def html_escape(other), do: html_escape(to_string(other))
 end

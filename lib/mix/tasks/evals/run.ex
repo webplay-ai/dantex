@@ -20,6 +20,8 @@ defmodule Mix.Tasks.Evals.Run do
     Application.ensure_all_started(:httpoison)
     Application.ensure_all_started(:goth)
     Application.ensure_all_started(:jason)
+    Application.ensure_all_started(:finch)
+    Application.ensure_all_started(:openai_ex)
 
     # Manually start Goth if needed
     start_goth_authentication()
@@ -143,13 +145,9 @@ defmodule Mix.Tasks.Evals.Run do
     results_dir = Path.join(["evals", eval_name, "results"])
     File.mkdir_p!(results_dir)
 
-    # Generate a timestamp for the results file
-    date_string = Date.utc_today() |> Date.to_string()
-    results_path = Path.join(results_dir, "#{date_string}_results.html")
-
-    case apply(eval_module, :run_all, [agent, test_cases, metric, [results_path: results_path]]) do
-      {:ok, test_cases} ->
-        {:ok, test_cases}
+    case apply(eval_module, :run, []) do
+      {:ok, agent, metric, test_cases} ->
+        apply(Eval, :run_all, [results_dir, agent, metric, test_cases])
 
       {:error, error} ->
         IO.puts("ERROR: Evaluation failed: #{inspect(error)}")

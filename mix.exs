@@ -27,13 +27,17 @@ defmodule Dantex.MixProject do
       {:ecto_sql, "~> 3.0"},
       {:httpoison, "~> 2.0"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
 
       # Gemini
       {:goth, "~> 1.4"},
 
       # Open AI
       {:openai_ex, "~> 0.8.6"},
-      {:kino, "~> 0.14.2"}
+      {:kino, "~> 0.14.2"},
+
+      # Testing
+      {:mock, "~> 0.3.0", only: :test}
     ]
   end
 end

@@ -59,17 +59,16 @@ defmodule Mix.Tasks.Evals.Gen do
       Customize this file to implement your specific evaluation logic.
       \"\"\"
 
-      alias Dantex.{Agent, Message, Eval}
-      alias Dantex.Eval.{TestCase, RegexMatchMetric}
+      alias Dantex.{Agent, Message}
+      alias Dantex.Eval.{TestCase, RegexMatchMetric, Metric}
 
       @doc \"\"\"
       Runs the evaluation and returns the results.
 
       This function is called by the `mix evals.run #{eval_name}` task.
       \"\"\"
+      @spec run() :: {:ok, Agent.t(), Metric.t(), [TestCase.t()]} | {:error, term()}
       def run do
-        IO.puts("Running #{module_name} evaluation...")
-
         # Define your test cases
         test_cases = [
           # Example test case:
@@ -84,32 +83,10 @@ defmodule Mix.Tasks.Evals.Gen do
         metric = RegexMatchMetric.new(~r/4/)
 
         # Define your agent/model
-        agent = Agent.new(:openai, "gpt-4")
+        agent = Agent.new(provider: :openai, model: "gpt-4o-mini")
 
-        # Run the evaluation for each test case
-        results = Enum.map(test_cases, fn test_case ->
-          case Eval.run(agent, test_case, metric) do
-            {:ok, result} -> result
-            {:error, error} ->
-              IO.puts("Error running test case: \#{inspect(error)}")
-              nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
-
-        # Calculate summary statistics
-        total_cases = length(results)
-        passed_cases = Enum.count(results, & &1.pass)
-        pass_rate = if total_cases > 0, do: passed_cases / total_cases, else: 0
-
-        # Return the evaluation results
-        %{
-          name: "#{eval_name}",
-          total_cases: total_cases,
-          passed_cases: passed_cases,
-          pass_rate: pass_rate,
-          results: results
-        }
+        # Just return the setup; it will be run and results will be printed to html
+        {:ok, agent, metric, test_cases}
       end
     end
     """
@@ -140,7 +117,6 @@ defmodule Mix.Tasks.Evals.Gen do
     1. Test cases
     2. Metrics
     3. Agent/model configuration
-    4. Result processing
 
     ## Additional Files
 
