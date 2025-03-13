@@ -5,6 +5,7 @@ defmodule Dantex.Model do
 
   alias Dantex.Message
   alias Dantex.Provider
+  alias Dantex.Tool
   require Logger
 
   @type t :: %__MODULE__{
@@ -18,8 +19,21 @@ defmodule Dantex.Model do
   def new(%__MODULE__{} = model, _model_name = nil), do: model
 
   def new(provider_key, model_name) when is_atom(provider_key) and is_binary(model_name) do
+    provider_module = get_provider(provider_key)
+
+    # Check if the provider is configured
+    case Application.get_env(:dantex, :providers) do
+      nil ->
+        raise "No providers configured. Please configure at least one provider in your application's config.exs."
+
+      providers ->
+        unless Keyword.has_key?(providers, provider_key) do
+          raise "Provider #{provider_key} not configured. Please configure it in your application's config.exs."
+        end
+    end
+
     %__MODULE__{
-      provider: get_provider(provider_key),
+      provider: provider_module,
       model: model_name
     }
   end
@@ -32,6 +46,7 @@ defmodule Dantex.Model do
   defp get_provider(provider_key) do
     case provider_key do
       :openai -> Dantex.Providers.OpenAI
+      :ollama -> Dantex.Providers.Ollama
       :gemini -> Dantex.Providers.Gemini
       _ -> raise "Unknown provider: #{provider_key}"
     end
@@ -59,11 +74,11 @@ defmodule Dantex.Model do
   Sends messages to the provider for chat completion.
   Uses the provider stored in the model struct instance.
   """
-  @spec chat_completion(%__MODULE__{}, list(Message.t())) ::
+  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t())) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
-  def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages)
+  def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools)
       when not is_nil(provider) do
-    case provider.chat_completion(model, messages) do
+    case provider.chat_completion(model, messages, tools) do
       {:ok, messages, usage} when is_list(messages) ->
         last_message = List.last(messages)
         {:ok, {last_message, messages}, usage}

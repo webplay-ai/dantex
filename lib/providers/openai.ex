@@ -27,15 +27,27 @@ defmodule Dantex.Providers.OpenAI do
           {:ok, list(Message.t()), Dantex.Provider.usage()}
           | {:error, String.t()}
           | {:rate_limit, String.t()}
-  def chat_completion(model, messages) do
-    cfg = OpenaiEx.new(get_api_key!()) |> OpenaiEx.with_receive_timeout(110_000)
+  def chat_completion(model, messages, tools \\ []) do
+    api_key = Dantex.Providers.Config.get_api_key(:openai)
+    cfg = OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(110_000)
 
     req =
-      Chat.Completions.new(
-        model: model,
-        messages: format_messages(messages),
-        temperature: 0.0
-      )
+      if Enum.empty?(tools) do
+        Chat.Completions.new(
+          model: model,
+          messages: format_messages(messages),
+          temperature: 0.0
+        )
+      else
+        # formatted_tools = format_tools(tools)
+
+        Chat.Completions.new(
+          model: model,
+          messages: format_messages(messages),
+          temperature: 0.0,
+          # tools: formatted_tools
+        )
+      end
 
     with {:ok, result} <-
            Chat.Completions.create(cfg, req),
@@ -78,8 +90,4 @@ defmodule Dantex.Providers.OpenAI do
 
   defp parse_response(_), do: {:error, "Invalid message format"}
 
-  defp get_api_key! do
-    System.get_env("OPENAI_API_KEY") ||
-      raise "OpenAI API key not configured"
-  end
 end

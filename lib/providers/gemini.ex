@@ -7,7 +7,6 @@ defmodule Dantex.Providers.Gemini do
   @behaviour Provider
 
   require Logger
-  @api_key System.get_env("GEMINI_API_KEY")
 
   @doc """
   Generates content using the Gemini LLM.
@@ -20,13 +19,14 @@ defmodule Dantex.Providers.Gemini do
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()]) ::
+  @spec chat_completion(String.t(), [Message.t()], list(map())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages) when is_list(messages) do
+  def chat_completion(model, messages, _tools \\ []) when is_list(messages) do
     model = "gemini-2.0-flash"
+    api_key = Dantex.Providers.Config.get_api_key(:gemini)
 
     url =
-      "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent?key=#{@api_key}"
+      "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent?key=#{api_key}"
 
     headers = [{"Content-Type", "application/json"}]
     body = build_request_body(messages)

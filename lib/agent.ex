@@ -163,41 +163,9 @@ defmodule Dantex.Agent do
     {:ok, messages ++ [Message.user(user_prompt)]}
   end
 
-  # @spec build_system_prompt(String.t() | Message.t(), [Tool.t()]) :: Message.t()
-  # defp build_system_prompt(system_prompt, tools) do
-  #   tool_descriptions = build_tool_descriptions(tools)
-
-  #   content =
-  #     case system_prompt do
-  #       %Message{content: content} -> content
-  #       content when is_binary(content) -> content
-  #     end
-
-  #   Message.system(content <> "\n\n" <> tool_descriptions)
-  # end
-
-  # @spec build_tool_descriptions(list(Tool.t())) :: String.t()
-  # defp build_tool_descriptions(tools) do
-  #   tools
-  #   |> Enum.map(&get_tool_description/1)
-  #   |> Enum.join("\n\n")
-  # end
-
-  # @spec get_tool_description(Tool.t()) :: String.t()
-  # defp get_tool_description(tool_module) do
-  #   name = tool_module.tool_name()
-  #   description = tool_module.tool_description()
-
-  #   """
-  #   Tool: #{name}
-  #   Description: #{description}
-  #   Output Type: #{output_type}
-  #   """
-  # end
-
   @spec chat_completion(t(), list(Message.t())) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, term()}
   defp(chat_completion(agent, messages)) do
-    Model.chat_completion(agent.model, messages)
+    Model.chat_completion(agent.model, messages, agent.tools)
   end
 end

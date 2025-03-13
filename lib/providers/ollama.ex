@@ -22,10 +22,16 @@ defmodule Dantex.Providers.Ollama do
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()]) ::
+  @spec chat_completion(String.t(), [Message.t()], list(map())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages) when is_list(messages) do
-    url = "#{api_base()}/api/chat"
+  def chat_completion(model, messages, _tools \\ []) when is_list(messages) do
+
+    # api_key = Dantex.Providers.Config.get_api_key(:ollama)
+    api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base)
+    if api_base == nil do
+      api_base = @default_api_base
+    end
+    url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]
     body = build_request_body(model, messages)
@@ -109,7 +115,4 @@ defmodule Dantex.Providers.Ollama do
 
   defp parse_response(_), do: {:error, "Invalid response format"}
 
-  defp api_base do
-    System.get_env("OLLAMA_API_BASE") || @default_api_base
-  end
 end
