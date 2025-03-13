@@ -34,7 +34,6 @@ defmodule Dantex.Agent do
 
         @tool_name "roll_die"
         @tool_description "Roll a six-sided die and return the result"
-        @tool_output_type :string
 
         def call(_params) do
           {:ok, Integer.to_string(Enum.random(1..6))}
@@ -188,7 +187,6 @@ defmodule Dantex.Agent do
   # defp get_tool_description(tool_module) do
   #   name = tool_module.tool_name()
   #   description = tool_module.tool_description()
-  #   output_type = tool_module.tool_output_type()
 
   #   """
   #   Tool: #{name}
