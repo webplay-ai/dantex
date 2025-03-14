@@ -69,36 +69,27 @@ defmodule Dantex.Tool.XMLAdapter do
 
         case function_matches do
           [] ->
-            # No function calls found
             {:ok, nil}
 
+          # Single function call found
           [match] ->
-            # Single function call found
             [_, function_name, function_content] = match
+            {:ok, {function_name, function_content}}
 
-            case extract_parameters(function_content) do
-              {:ok, params} ->
-                {:ok, {function_name, function_content}}
-
-              {:error, reason} ->
-                {:error, reason}
-            end
-
+          # Multiple function calls found, get the first function name
           matches when length(matches) > 1 ->
-            # Multiple function calls found, get the first function name
             function_name = matches |> List.first() |> Enum.at(1)
             {:error, "Multiple function calls found: #{function_name}"}
 
+          # If the standard pattern fails, check for specific signs of mismatched tags
+          # This will catch cases where a closing tag doesn't match its opening tag
           _ ->
-            # If the standard pattern fails, check for specific signs of mismatched tags
-            # This will catch cases where a closing tag doesn't match its opening tag
             opening_tag = Regex.run(~r/<(\w+)>/, xml_content)
             closing_tag = Regex.run(~r/<\/(\w+)>/, xml_content)
 
             if opening_tag && closing_tag && Enum.at(opening_tag, 1) != Enum.at(closing_tag, 1) do
               {:error, "Mismatched tags detected"}
             else
-              # Return ok with nil when no function is found
               {:ok, nil}
             end
         end

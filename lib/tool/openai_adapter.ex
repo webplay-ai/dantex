@@ -15,9 +15,26 @@ defmodule Dantex.Tool.OpenAIAdapter do
       {:ok, [%{id: "call_123", type: "function", function: %{name: "get_weather", arguments: "{\"location\":\"San Francisco\"}"}}]}
   """
   @spec extract_tool_calls(Message.t()) :: {:ok, Message.t()} | {:error, term()}
-  def extract_tool_calls(message) do
+  def extract_tool_calls(%Message{content: _content} = message) do
     # This is a no-op since OpenAI already parses this in the response
     {:ok, message}
   end
 
+  # Catch-all clause for compatibility with XMLAdapter
+  def extract_tool_calls(msg), do: {:ok, msg}
+
+  @doc """
+  Builds documentation for a list of tools.
+  This is a no-op implementation for OpenAI compatibility with XMLAdapter.
+
+  ## Examples
+
+      iex> tools = [Dantex.Examples.WeatherTool]
+      iex> Dantex.Tool.OpenAIAdapter.build_tool_docs(tools)
+      ""
+  """
+  @spec build_tool_docs(list(Tool.t())) :: String.t()
+  def build_tool_docs(_tools) do
+    ""
+  end
 end

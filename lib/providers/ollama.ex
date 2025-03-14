@@ -54,8 +54,15 @@ defmodule Dantex.Providers.Ollama do
     body = build_request_body(model, messages, tools)
 
     try do
+      # Add comprehensive timeout settings (all in milliseconds)
+      timeout_options = [
+        timeout: 30_000,         # Overall request timeout (default: 5000)
+        recv_timeout: 60_000,    # Response receiving timeout (default: 5000)
+        connect_timeout: 10_000  # Connection establishment timeout (default: 8000)
+      ]
+
       {:ok, %{status_code: status_code, body: body}} =
-        HTTPoison.post(url, body, headers)
+        HTTPoison.post(url, body, headers, timeout_options)
 
       case status_code do
         200 ->

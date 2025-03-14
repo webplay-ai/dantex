@@ -47,7 +47,8 @@ defmodule Dantex.Providers.OpenAI do
     end
 
     api_key = Dantex.Providers.Config.get_api_key(:openai)
-    cfg = OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(110_000)
+    # Increase timeout from 110 seconds to 180 seconds (3 minutes)
+    cfg = OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(180_000)
 
     req =
       if Enum.empty?(tools) do

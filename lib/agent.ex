@@ -1,9 +1,8 @@
 defmodule Dantex.Agent do
   @moduledoc """
-  Agents are containers that group model, system prompt, tooling, response formats,
-  tool call history, and retry limits.
+  Agents are containers that group model, messages and tooling.
 
-  Agents can track the history of tool calls and enforce limits on the number of failed
+  They can track the history of tool calls and enforce limits on the number of failed
   retries for a given tool and set of arguments.
 
   Future considerations:
@@ -11,12 +10,19 @@ defmodule Dantex.Agent do
 
   ## Example
 
-      alias Dante.{Agent, Model, Prompt, Response, ResponseFormat, Message}
+      alias Dantex.{Agent, Message}
 
-      model = Model.new("gpt-4")
+      messages = [
+        "You multiple everythign with 2" |> Message.system()
+      ]
 
-      # or a mock model so we can unit or end 2 end test our business logic
-      mock = Model.mock([%{ role: system, content: "foo"}])
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: messages
+      )
+
+      {:ok, {response, agent}} = Agent.run(agent, "What is 2+2?")
 
       # Define a plain tool
       defmodule DiceTool do
@@ -34,13 +40,12 @@ defmodule Dantex.Agent do
       agent = Agent.new(
         provider: :openai,
         model: "gpt-4o-mini,
-        messages: mock,
         tools: [DiceTool], // optional
         max_failed_retries: 3 // optional
       )
 
       # Run the agent
-      {:ok, {last_msg, _, _, _}, _} = Agent.run(agent, "Roll the die")
+      {:ok, response, agent} = Agent.run(agent, "Roll the dice")
   """
 
   alias Dantex.{Tool, Model, Message, Provider}
@@ -173,13 +178,12 @@ defmodule Dantex.Agent do
      c. Update the tool history
   5. Return with updated agent state, history and messages
   """
-  @spec run(t(), Message.t() | String.t()) ::
-          {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()} | {:error, term()}
+  @spec run(t(), Message.t() | String.t()) :: {:ok, Message.t(), t()} | {:error, term()}
   def run(%__MODULE__{} = agent, message) do
     with {:ok, messages} <- build_messages(agent, message),
-         {:ok, {last_msg, all_msgs}, usage} <- chat_completion(agent, messages),
-         {:ok, processed_msg} <- agent.tool_adapter.extract_function_calls(last_msg) do
-      process_message(agent, processed_msg, messages, all_msgs, usage)
+         {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
+         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
+      process_message(agent, processed_msg)
     else
       {:error, reason} -> {:error, reason}
     end
@@ -188,48 +192,45 @@ defmodule Dantex.Agent do
   @doc """
   Processes the message based on whether it contains tool calls or not.
   """
-  @spec process_message(t(), Message.t(), [Message.t()], [Message.t()], Provider.usage()) ::
-          {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()}
-  defp process_message(agent, %{tool_calls: tool_calls} = last_msg, messages, all_msgs, usage)
+  @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
+  defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
        when is_list(tool_calls) and length(tool_calls) > 0 do
-    process_tool_calls(agent, last_msg, all_msgs, usage)
+    process_tool_calls(agent, last_msg)
   end
 
-  defp process_message(agent, last_msg, messages, all_msgs, usage) do
+  defp process_message(agent, last_msg) do
     # No tool calls, just return the result
-    updated_agent = %{agent | messages: messages ++ [last_msg]}
-    {:ok, {last_msg, all_msgs, updated_agent, nil}, usage}
+    updated_agent = %{agent | messages: agent.messages ++ [last_msg]}
+    {:ok, last_msg, updated_agent}
   end
 
   @doc """
   Processes tool calls by checking retry limits and executing the tools.
   """
-  @spec process_tool_calls(t(), Message.t(), [Message.t()], Provider.usage()) ::
-          {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()}
-  defp process_tool_calls(agent, last_msg, all_msgs, usage) do
+  @spec process_tool_calls(t(), Message.t()) :: {:ok, Message.t(), t()}
+  defp process_tool_calls(agent, last_msg) do
     case check_max_failed_retries(agent, last_msg.tool_calls) do
       {:ok} ->
-        execute_and_update_agent(agent, last_msg, all_msgs, usage)
+        execute_and_update_agent(agent, last_msg)
 
       {:error, reason} ->
         error_message = %Message{
           role: "assistant",
           content: "Could not execute tool call, reached max failed retries for last tool call.\nError details:\n#{inspect(reason)}"
         }
-        updated_messages = all_msgs ++ [error_message]
+        updated_messages = agent.messages ++ [error_message]
         updated_agent = %{agent | messages: updated_messages}
-        {:ok, {last_msg, updated_messages, updated_agent, nil}, usage}
+        {:ok, last_msg, updated_agent}
     end
   end
 
   @doc """
   Executes tool calls and updates the agent with results.
   """
-  @spec execute_and_update_agent(t(), Message.t(), [Message.t()], Provider.usage()) ::
-          {:ok, {Message.t(), [Message.t()], t(), list(tool_result())}, Provider.usage()}
-  defp execute_and_update_agent(agent, last_msg, all_msgs, usage) do
+  @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
+  defp execute_and_update_agent(agent, last_msg) do
     tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls)
-    updated_messages = all_msgs ++ tool_result_messages
+    updated_messages = agent.messages ++ tool_result_messages
 
     tool_results =
       tool_result_messages
@@ -244,7 +245,7 @@ defmodule Dantex.Agent do
       tool_history: updated_tool_history
     }
 
-    {:ok, {last_msg, updated_messages, updated_agent, tool_results}, usage}
+    {:ok, last_msg, updated_agent}
   end
 
   @doc """
@@ -263,26 +264,26 @@ defmodule Dantex.Agent do
   """
   @spec check_max_failed_retries(t(), list(Message.tool_call())) ::
           {:ok} | {:error, term()}
-  defp check_max_failed_retries(%__MODULE__{max_failed_retries: nil} = _agent, tool_calls) do
+  defp check_max_failed_retries(%__MODULE__{max_failed_retries: nil} = _agent, _tool_calls) do
     # If max_failed_retries is not set, we can always proceed
-    {:ok, tool_calls}
+    {:ok}
+  end
+
+  defp check_max_failed_retries(%__MODULE__{} = _agent, []) do
+    # If there are no tool calls, we can proceed
+    {:ok}
   end
 
   defp check_max_failed_retries(%__MODULE__{} = agent, tool_calls) do
     # Check each tool call to see if it exceeds max_failed_retries
-    Enum.reduce_while(tool_calls, {:ok, []}, fn tool_call, acc ->
-      case acc do
-        {:ok, _} ->
-          tool_name = tool_call.function.name
-          arguments = Jason.decode!(tool_call.function.arguments)
+    Enum.reduce_while(tool_calls, {:ok}, fn tool_call, acc ->
+      tool_name = tool_call.function.name
+      arguments = Jason.decode!(tool_call.function.arguments)
 
-          if exceeded_failed_retries?(agent, tool_name, arguments) do
-            {:halt, {:error, "Max failed retries exceeded for tool #{tool_name}"}}
-          else
-            {:continue, {:ok}} # Continue checking other tool calls
-          end
-        {:error, _, _} ->
-          {:halt, acc}
+      if exceeded_failed_retries?(agent, tool_name, arguments) do
+        {:halt, {:error, "Max failed retries exceeded for tool #{tool_name}"}}
+      else
+        {:cont, acc} # Continue checking other tool calls
       end
     end)
   end
@@ -342,27 +343,25 @@ defmodule Dantex.Agent do
   """
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call())) :: [Message.t()]
   defp execute_tool_calls(tools, tool_calls) do
+    tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]
     tool_calls
-    |> Enum.flat_map(fn message ->
-      Enum.map(message.tool_calls, fn tool_call ->
-        tool_name = Map.get(tool_call, :function) |> Map.get(:name)
-        tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
+    |> Enum.map(fn tool_call ->
+      tool_name = Map.get(tool_call, :function) |> Map.get(:name)
+      tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
+      if tool == nil do
+        Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
+      else
+        arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
-        if tool == nil do
-          Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
-        else
-          arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
+        # Execute the tool with decoded arguments
+        case tool.call(arguments) do
+          {:ok, result} ->
+            Message.tool_result(Map.get(tool_call, :id), result)
 
-          # Execute the tool with decoded arguments
-          case tool.call(arguments) do
-            {:ok, result} ->
-              Message.tool_result(Map.get(tool_call, :id), result)
-
-            {:error, error} ->
-              Message.tool_result(Map.get(tool_call, :id), %{error: error})
-          end
+          {:error, error} ->
+            Message.tool_result(Map.get(tool_call, :id), %{error: error})
         end
-      end)
+      end
     end)
   end
 

@@ -47,7 +47,7 @@ defmodule Dantex.Eval do
     updated_agent = %{agent | messages: Enum.drop(test_case.input, -1)}
 
     case Agent.run(updated_agent, last_message) do
-      {:ok, {response, _all_messages, _updated_agent, _formatted_results}, usage} ->
+      {:ok, response, _agent} ->
         # Get the actual output and update the test case
         updated_test_case = %{test_case | actual_output: response.content}
 
@@ -60,7 +60,7 @@ defmodule Dantex.Eval do
 
         # Get tokens used - this would need to be extended when actual token
         # information is available from Model.chat_completion
-        tokens_used = Map.get(usage, :total_tokens, 0)
+        tokens_used = 0
 
         {:ok,
          TestCase.set_result(test_case, %{
@@ -71,6 +71,7 @@ defmodule Dantex.Eval do
          })}
 
       {:error, error} ->
+        Logger.error("Eval failed: #{inspect(error)}")
         {:error, "Evaluation failed: #{inspect(error)}"}
     end
   end
