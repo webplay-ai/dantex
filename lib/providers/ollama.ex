@@ -4,6 +4,7 @@ defmodule Dantex.Providers.Ollama do
   """
   alias Dantex.Message
   alias Dantex.Provider
+  alias Dantex.Tool
   @behaviour Provider
 
   require Logger
@@ -17,16 +18,15 @@ defmodule Dantex.Providers.Ollama do
 
     * `model` - The model name to use (e.g., "llama2", "mistral", etc.)
     * `messages` - List of messages in the conversation
+    * `tools` - List of tools to make available to the model
 
   ## Returns
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()], list(map())) ::
+  @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages, _tools \\ []) when is_list(messages) do
-
-    # api_key = Dantex.Providers.Config.get_api_key(:ollama)
+  def chat_completion(model, messages, tools \\ []) when is_list(messages) do
     api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base)
     if api_base == nil do
       api_base = @default_api_base
@@ -34,7 +34,7 @@ defmodule Dantex.Providers.Ollama do
     url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]
-    body = build_request_body(model, messages)
+    body = build_request_body(model, messages, tools)
 
     try do
       {:ok, %{status_code: status_code, body: body}} =
@@ -65,25 +65,93 @@ defmodule Dantex.Providers.Ollama do
     end
   end
 
-  @spec build_request_body(String.t(), [Message.t()]) :: String.t()
-  defp build_request_body(model, messages) do
+  @spec build_request_body(String.t(), [Message.t()], list(Tool.t())) :: String.t()
+  defp build_request_body(model, messages, tools) do
     formatted_messages =
-      Enum.map(messages, fn %Message{role: role, content: content} ->
-        %{
-          role: role,
-          content: content
-        }
+      Enum.map(messages, fn message ->
+        case message do
+          %Message{role: role, content: content, tool_calls: _tool_calls} ->
+            %{
+              role: role,
+              content: content
+            }
+
+          %Message{role: role, content: content, tool_call_id: tool_call_id} when not is_nil(tool_call_id) ->
+            %{
+              role: role,
+              content: content,
+              tool_call_id: tool_call_id
+            }
+
+          %Message{role: role, content: content} ->
+            %{
+              role: role,
+              content: content
+            }
+        end
       end)
 
-    Jason.encode!(%{
+    request = %{
       model: model,
       messages: formatted_messages,
       stream: false
-    })
+    }
+
+    # Add tools to the request if provided
+    request =
+      if Enum.empty?(tools) do
+        request
+      else
+        Map.put(request, :tools, format_tools(tools))
+      end
+
+    Jason.encode!(request)
+  end
+
+  @spec format_tools([Tool.t()]) :: list(map())
+  defp format_tools(tools) do
+    Enum.map(tools, fn tool ->
+      # Convert Dantex.Tool to Ollama tool format
+      # Note: Ollama's tool format may differ from OpenAI's
+      %{
+        type: "function",
+        function: %{
+          name: tool.tool_name(),
+          description: tool.tool_description(),
+          parameters: Jason.decode!(tool.generate_tool_json_schema())
+        }
+      }
+    end)
   end
 
   @spec parse_response(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
+  defp parse_response(%{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}, "eval_count" => eval_count}) do
+    # Convert tool_calls to our structured type
+    formatted_tool_calls = Enum.map(tool_calls, fn tool_call ->
+      %{
+        id: tool_call["id"],
+        type: tool_call["type"],
+        function: %{
+          name: tool_call["function"]["name"],
+          arguments: tool_call["function"]["arguments"]
+        }
+      }
+    end)
+
+    message = %Message{
+      role: role,
+      content: content,
+      tool_calls: formatted_tool_calls
+    }
+
+    formatted_usage = %{
+      total_tokens: eval_count
+    }
+
+    {:ok, [message], formatted_usage}
+  end
+
   defp parse_response(%{"message" => %{"role" => role, "content" => content}, "eval_count" => eval_count}) do
     message = %Message{
       role: role,

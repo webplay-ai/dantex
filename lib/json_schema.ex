@@ -60,8 +60,6 @@ defmodule Dantex.JSONSchema do
     end
   end
 
-  defp fetch_new_ecto_schema_doc(_), do: nil
-
   defp fetch_old_ecto_schema_doc(ecto_schema) when is_ecto_schema(ecto_schema) do
     ecto_schema_struct_literal = "%#{title_for(ecto_schema)}{}"
 
@@ -80,8 +78,6 @@ defmodule Dantex.JSONSchema do
         nil
     end
   end
-
-  defp fetch_old_ecto_schema_doc(_), do: nil
 
   defp bfs_from_ecto_schema([], _seen_schemas), do: []
 

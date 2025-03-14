@@ -23,7 +23,7 @@ defmodule Dantex.Providers.OpenAI do
   alias OpenaiEx.Chat
   alias Dantex.Message
 
-  @spec chat_completion(String.t(), list(Message.t())) ::
+  @spec chat_completion(String.t(), list(Message.t()), list(Dantex.Tool.t())) ::
           {:ok, list(Message.t()), Dantex.Provider.usage()}
           | {:error, String.t()}
           | {:rate_limit, String.t()}
@@ -39,13 +39,13 @@ defmodule Dantex.Providers.OpenAI do
           temperature: 0.0
         )
       else
-        # formatted_tools = format_tools(tools)
+        formatted_tools = format_tools(tools)
 
         Chat.Completions.new(
           model: model,
           messages: format_messages(messages),
           temperature: 0.0,
-          # tools: formatted_tools
+          tools: formatted_tools
         )
       end
 
@@ -67,8 +67,24 @@ defmodule Dantex.Providers.OpenAI do
 
   @spec format_messages([Message.t()]) :: list(map())
   defp format_messages(messages) do
-    Enum.map(messages, fn %{role: role, content: content} ->
-      %{role: role, content: content}
+    Enum.map(messages, fn message ->
+      case message do
+        %{role: role, content: content, tool_calls: tool_calls} when not is_nil(tool_calls) ->
+          %{role: role, content: content, tool_calls: tool_calls}
+
+        %{role: role, content: content, tool_call_id: tool_call_id} when not is_nil(tool_call_id) ->
+          %{role: role, content: content, tool_call_id: tool_call_id}
+
+        %{role: role, content: content} ->
+          %{role: role, content: content}
+      end
+    end)
+  end
+
+  @spec format_tools([Dantex.Tool.t()]) :: list(map())
+  defp format_tools(tools) do
+    Enum.map(tools, fn tool ->
+      Jason.decode!(tool.generate_tool_json_schema())
     end)
   end
 
@@ -76,8 +92,23 @@ defmodule Dantex.Providers.OpenAI do
   defp parse_response(%{"choices" => choices, "usage" => usage}) do
     messages =
       choices
-      |> Enum.map(fn %{"message" => %{"role" => role, "content" => content}} ->
-        %Message{role: role, content: content}
+      |> Enum.map(fn
+        %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}} ->
+          # Convert tool_calls to our structured type
+          formatted_tool_calls = Enum.map(tool_calls, fn tool_call ->
+            %{
+              id: tool_call["id"],
+              type: tool_call["type"],
+              function: %{
+                name: tool_call["function"]["name"],
+                arguments: tool_call["function"]["arguments"]
+              }
+            }
+          end)
+          %Message{role: role, content: content, tool_calls: formatted_tool_calls}
+
+        %{"message" => %{"role" => role, "content" => content}} ->
+          %Message{role: role, content: content}
       end)
 
     # Transform OpenAI usage to match our Provider.usage type

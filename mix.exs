@@ -31,6 +31,7 @@ defmodule Dantex.MixProject do
 
       # Gemini
       {:goth, "~> 1.4"},
+      {:uuid, "~> 1.1"},
 
       # Open AI
       {:openai_ex, "~> 0.8.6"},

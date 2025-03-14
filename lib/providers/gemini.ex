@@ -4,6 +4,7 @@ defmodule Dantex.Providers.Gemini do
   """
   alias Dantex.Message
   alias Dantex.Provider
+  alias Dantex.Tool
   @behaviour Provider
 
   require Logger
@@ -13,15 +14,17 @@ defmodule Dantex.Providers.Gemini do
 
   ## Parameters
 
-    * `prompt` - The prompt to send to the LLM.
+    * `model` - The model name to use (e.g., "gemini-2.0-flash")
+    * `messages` - List of messages in the conversation
+    * `tools` - List of tools to make available to the model
 
   ## Returns
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()], list(map())) ::
+  @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages, _tools \\ []) when is_list(messages) do
+  def chat_completion(model, messages, tools \\ []) when is_list(messages) do
     model = "gemini-2.0-flash"
     api_key = Dantex.Providers.Config.get_api_key(:gemini)
 
@@ -29,7 +32,7 @@ defmodule Dantex.Providers.Gemini do
       "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent?key=#{api_key}"
 
     headers = [{"Content-Type", "application/json"}]
-    body = build_request_body(messages)
+    body = build_request_body(messages, tools)
 
     try do
       {:ok, %{status_code: status_code, body: body}} =
@@ -60,8 +63,8 @@ defmodule Dantex.Providers.Gemini do
     end
   end
 
-  @spec build_request_body([Message.t()]) :: String.t()
-  defp build_request_body(messages) do
+  @spec build_request_body([Message.t()], list(Tool.t())) :: String.t()
+  defp build_request_body(messages, tools) do
     contents =
       Enum.map(messages, fn %Message{role: role, content: content} ->
         %{
@@ -70,7 +73,31 @@ defmodule Dantex.Providers.Gemini do
         }
       end)
 
-    Jason.encode!(%{contents: contents})
+    request = %{contents: contents}
+
+    # Add tools to the request if provided
+    request =
+      if Enum.empty?(tools) do
+        request
+      else
+        Map.put(request, :tools, %{
+          function_declarations: format_tools(tools)
+        })
+      end
+
+    Jason.encode!(request)
+  end
+
+  @spec format_tools([Tool.t()]) :: list(map())
+  defp format_tools(tools) do
+    Enum.map(tools, fn tool ->
+      # Convert Dantex.Tool to Gemini function declaration format
+      %{
+        name: tool.tool_name(),
+        description: tool.tool_description(),
+        parameters: Jason.decode!(tool.generate_tool_json_schema())
+      }
+    end)
   end
 
   # Gemini does not support the system role, but the model role only
@@ -83,17 +110,46 @@ defmodule Dantex.Providers.Gemini do
     messages =
       candidates
       |> Enum.map(fn candidate ->
-        text =
-          candidate
-          |> Map.get("content", %{})
-          |> Map.get("parts", [])
-          |> List.first(%{})
-          |> Map.get("text", "")
+        content = Map.get(candidate, "content", %{})
+        parts = Map.get(content, "parts", [])
 
-        %Message{
-          role: "assistant",
-          content: text
-        }
+        # Check if there are function calls in the response
+        function_calls =
+          parts
+          |> Enum.filter(fn part -> Map.has_key?(part, "functionCall") end)
+          |> Enum.map(fn part ->
+            function_call = Map.get(part, "functionCall", %{})
+            %{
+              id: UUID.uuid4(), # Gemini might not provide IDs, so we generate one
+              type: "function",
+              function: %{
+                name: Map.get(function_call, "name", ""),
+                arguments: Jason.encode!(Map.get(function_call, "args", %{}))
+              }
+            }
+          end)
+
+        # Get text content if available
+        text =
+          parts
+          |> Enum.filter(fn part -> Map.has_key?(part, "text") end)
+          |> Enum.map(fn part -> Map.get(part, "text", "") end)
+          |> Enum.join("")
+
+        if Enum.empty?(function_calls) do
+          # Regular message without function calls
+          %Message{
+            role: "assistant",
+            content: text
+          }
+        else
+          # Message with function calls
+          %Message{
+            role: "assistant",
+            content: text,
+            tool_calls: function_calls
+          }
+        end
       end)
 
     # Format usage to match our Provider.usage type
@@ -109,17 +165,46 @@ defmodule Dantex.Providers.Gemini do
     messages =
       candidates
       |> Enum.map(fn candidate ->
-        text =
-          candidate
-          |> Map.get("content", %{})
-          |> Map.get("parts", [])
-          |> List.first(%{})
-          |> Map.get("text", "")
+        content = Map.get(candidate, "content", %{})
+        parts = Map.get(content, "parts", [])
 
-        %Message{
-          role: "assistant",
-          content: text
-        }
+        # Check if there are function calls in the response
+        function_calls =
+          parts
+          |> Enum.filter(fn part -> Map.has_key?(part, "functionCall") end)
+          |> Enum.map(fn part ->
+            function_call = Map.get(part, "functionCall", %{})
+            %{
+              id: UUID.uuid4(), # Gemini might not provide IDs, so we generate one
+              type: "function",
+              function: %{
+                name: Map.get(function_call, "name", ""),
+                arguments: Jason.encode!(Map.get(function_call, "args", %{}))
+              }
+            }
+          end)
+
+        # Get text content if available
+        text =
+          parts
+          |> Enum.filter(fn part -> Map.has_key?(part, "text") end)
+          |> Enum.map(fn part -> Map.get(part, "text", "") end)
+          |> Enum.join("")
+
+        if Enum.empty?(function_calls) do
+          # Regular message without function calls
+          %Message{
+            role: "assistant",
+            content: text
+          }
+        else
+          # Message with function calls
+          %Message{
+            role: "assistant",
+            content: text,
+            tool_calls: function_calls
+          }
+        end
       end)
 
     # Provide a default usage estimate when actual usage is not available

@@ -47,7 +47,7 @@ defmodule Dantex.Eval do
     updated_agent = %{agent | messages: Enum.drop(test_case.input, -1)}
 
     case Agent.run(updated_agent, last_message) do
-      {:ok, {response, _all_messages, _updated_agent}, usage} ->
+      {:ok, {response, _all_messages, _updated_agent, _formatted_results}, usage} ->
         # Get the actual output and update the test case
         updated_test_case = %{test_case | actual_output: response.content}
 

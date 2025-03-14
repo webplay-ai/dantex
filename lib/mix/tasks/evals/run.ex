@@ -4,7 +4,11 @@ defmodule Mix.Tasks.Evals.Run do
 
   ## Usage
 
-      $ mix evals.run eval_name
+      $ mix evals.run eval_name [--provider PROVIDER] [--model MODEL]
+
+  Options:
+    * `--provider` - The provider to use (e.g., openai, ollama, gemini)
+    * `--model` - The model to use (e.g., gpt-4, llama2, gemini-pro)
 
   This task checks if the specified evaluation has already been run (by checking the .dantex-cache file).
   If not, it runs the evaluation and adds it to the cache.
@@ -26,18 +30,30 @@ defmodule Mix.Tasks.Evals.Run do
     # Manually start Goth if needed
     start_goth_authentication()
 
-    case args do
+    # Parse options
+    {opts, remaining_args, _} = OptionParser.parse(args,
+      strict: [
+        provider: :string,
+        model: :string
+      ]
+    )
+
+    provider = Keyword.get(opts, :provider)
+    model = Keyword.get(opts, :model)
+
+    case remaining_args do
       [eval_name] ->
-        run_evaluation(eval_name)
+        run_evaluation(eval_name, provider, model)
 
       _ ->
         IO.puts("""
         ERROR: Missing evaluation name
 
-        Usage: mix evals.run EVAL_NAME
+        Usage: mix evals.run EVAL_NAME [--provider PROVIDER] [--model MODEL]
 
         Example:
           mix evals.run my_evaluation
+          mix evals.run my_evaluation --provider openai --model gpt-4
         """)
 
         System.halt(1)
@@ -47,9 +63,12 @@ defmodule Mix.Tasks.Evals.Run do
   @doc """
   Coordinates the evaluation process by calling specialized functions in sequence.
   """
-  @spec run_evaluation(String.t()) :: no_return()
-  defp run_evaluation(eval_name) do
+  @spec run_evaluation(String.t(), String.t() | nil, String.t() | nil) :: no_return()
+  defp run_evaluation(eval_name, provider, model) do
     IO.puts("Running evaluation: #{eval_name}")
+
+    if provider, do: IO.puts("Using provider: #{provider}")
+    if model, do: IO.puts("Using model: #{model}")
 
     eval_file = verify_evaluation_exists(eval_name)
     cache_path = verify_cache_exists()
@@ -58,7 +77,7 @@ defmodule Mix.Tasks.Evals.Run do
     check_if_already_run(cache_content, eval_name)
 
     eval_module = load_evaluation_module(eval_file, eval_name)
-    execute_evaluation(eval_module, eval_name, cache_content, cache_path)
+    execute_evaluation(eval_module, eval_name, cache_content, cache_path, provider, model)
   end
 
   @doc """
@@ -137,15 +156,24 @@ defmodule Mix.Tasks.Evals.Run do
   @doc """
   Executes the evaluation and handles any errors.
   """
-  @spec execute_evaluation(atom(), String.t(), map(), String.t()) :: no_return()
-  defp execute_evaluation(eval_module, eval_name, cache_content, cache_path) do
+  @spec execute_evaluation(atom(), String.t(), map(), String.t(), String.t() | nil, String.t() | nil) :: no_return()
+  defp execute_evaluation(eval_module, eval_name, cache_content, cache_path, provider, model) do
     IO.puts("Executing evaluation...")
 
     # Create a results directory if it doesn't exist
     results_dir = Path.join(["evals", eval_name, "results"])
     File.mkdir_p!(results_dir)
 
-    case apply(eval_module, :run, []) do
+    # Create an agent if provider and model are specified
+    agent = if provider && model do
+      provider_atom = String.to_existing_atom(provider)
+      Dantex.Agent.new(provider: provider_atom, model: model)
+    else
+      nil
+    end
+
+    # Pass the agent to the eval module's run function
+    case apply(eval_module, :run, [agent]) do
       {:ok, agent, metric, test_cases} ->
         apply(Eval, :run_all, [results_dir, agent, metric, test_cases])
 

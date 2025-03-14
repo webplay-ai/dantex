@@ -66,9 +66,12 @@ defmodule Mix.Tasks.Evals.Gen do
       Runs the evaluation and returns the results.
 
       This function is called by the `mix evals.run #{eval_name}` task.
+
+      ## Parameters
+        * `agent` - Optional agent to use for the evaluation. If provided, this will override the agent defined in this function.
       \"\"\"
-      @spec run() :: {:ok, Agent.t(), Metric.t(), [TestCase.t()]} | {:error, term()}
-      def run do
+      @spec run(Agent.t() | nil) :: {:ok, Agent.t(), Metric.t(), [TestCase.t()]} | {:error, term()}
+      def run(agent \\\\ nil) do
         # Define your test cases
         test_cases = [
           # Example test case:
@@ -82,11 +85,15 @@ defmodule Mix.Tasks.Evals.Gen do
         # Define your metric
         metric = RegexMatchMetric.new(~r/4/)
 
-        # Define your agent/model
-        agent = Agent.new(provider: :openai, model: "gpt-4o-mini")
+        # Define your agent/model if not provided
+        final_agent = if agent do
+          agent
+        else
+          Agent.new(provider: :openai, model: "gpt-4o-mini")
+        end
 
         # Just return the setup; it will be run and results will be printed to html
-        {:ok, agent, metric, test_cases}
+        {:ok, final_agent, metric, test_cases}
       end
     end
     """
@@ -108,6 +115,12 @@ defmodule Mix.Tasks.Evals.Gen do
 
     ```
     mix evals.run #{eval_name}
+    ```
+
+    You can also specify a provider and model to use:
+
+    ```
+    mix evals.run #{eval_name} --provider openai --model gpt-4
     ```
 
     ## Customizing the Evaluation
@@ -136,6 +149,9 @@ defmodule Mix.Tasks.Evals.Gen do
 
     To run this evaluation:
       mix evals.run #{eval_name}
+
+    Or with a specific provider and model:
+      mix evals.run #{eval_name} --provider openai --model gpt-4
 
     Edit #{eval_file} to customize your evaluation.
     """)
