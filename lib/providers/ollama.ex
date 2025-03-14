@@ -1,4 +1,20 @@
 defmodule Dantex.Providers.Ollama do
+  @supported_models [
+    "gemma3:4b",
+    "gemma3:1b",
+    "gemma3:7b",
+    "gemma3:12b",
+
+    "deepseek-r1:1.5b",
+    "deepseek-r1:7b",
+    "deepseek-r1:8b",
+    "deepseek-r1:14b",
+    "deepseek-r1:32b",
+
+    "llama3.2",
+    "llama3.2:1b"
+  ]
+
   @moduledoc """
   Provides an interface to the Ollama LLM service.
   """
@@ -27,10 +43,16 @@ defmodule Dantex.Providers.Ollama do
   @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
   def chat_completion(model, messages, tools \\ []) when is_list(messages) do
+    unless model in @supported_models do
+      {:error, "Invalid model"}
+    end
+
     api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base)
+
     if api_base == nil do
       api_base = @default_api_base
     end
+
     url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]
@@ -76,7 +98,8 @@ defmodule Dantex.Providers.Ollama do
               content: content
             }
 
-          %Message{role: role, content: content, tool_call_id: tool_call_id} when not is_nil(tool_call_id) ->
+          %Message{role: role, content: content, tool_call_id: tool_call_id}
+          when not is_nil(tool_call_id) ->
             %{
               role: role,
               content: content,
@@ -126,18 +149,22 @@ defmodule Dantex.Providers.Ollama do
 
   @spec parse_response(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  defp parse_response(%{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}, "eval_count" => eval_count}) do
+  defp parse_response(%{
+         "message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls},
+         "eval_count" => eval_count
+       }) do
     # Convert tool_calls to our structured type
-    formatted_tool_calls = Enum.map(tool_calls, fn tool_call ->
-      %{
-        id: tool_call["id"],
-        type: tool_call["type"],
-        function: %{
-          name: tool_call["function"]["name"],
-          arguments: tool_call["function"]["arguments"]
+    formatted_tool_calls =
+      Enum.map(tool_calls, fn tool_call ->
+        %{
+          id: tool_call["id"],
+          type: tool_call["type"],
+          function: %{
+            name: tool_call["function"]["name"],
+            arguments: tool_call["function"]["arguments"]
+          }
         }
-      }
-    end)
+      end)
 
     message = %Message{
       role: role,
@@ -152,7 +179,10 @@ defmodule Dantex.Providers.Ollama do
     {:ok, [message], formatted_usage}
   end
 
-  defp parse_response(%{"message" => %{"role" => role, "content" => content}, "eval_count" => eval_count}) do
+  defp parse_response(%{
+         "message" => %{"role" => role, "content" => content},
+         "eval_count" => eval_count
+       }) do
     message = %Message{
       role: role,
       content: content
@@ -182,5 +212,4 @@ defmodule Dantex.Providers.Ollama do
   end
 
   defp parse_response(_), do: {:error, "Invalid response format"}
-
 end

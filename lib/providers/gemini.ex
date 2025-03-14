@@ -1,4 +1,12 @@
 defmodule Dantex.Providers.Gemini do
+  @supported_models [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro"
+  ]
+
   @moduledoc """
   Provides an interface to the Gemini LLM.
   """
@@ -25,7 +33,10 @@ defmodule Dantex.Providers.Gemini do
   @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
   def chat_completion(model, messages, tools \\ []) when is_list(messages) do
-    model = "gemini-2.0-flash"
+    unless model in @supported_models do
+      {:error, "Invalid model"}
+    end
+
     api_key = Dantex.Providers.Config.get_api_key(:gemini)
 
     url =
@@ -119,8 +130,10 @@ defmodule Dantex.Providers.Gemini do
           |> Enum.filter(fn part -> Map.has_key?(part, "functionCall") end)
           |> Enum.map(fn part ->
             function_call = Map.get(part, "functionCall", %{})
+
             %{
-              id: UUID.uuid4(), # Gemini might not provide IDs, so we generate one
+              # Gemini might not provide IDs, so we generate one
+              id: UUID.uuid4(),
               type: "function",
               function: %{
                 name: Map.get(function_call, "name", ""),
@@ -174,8 +187,10 @@ defmodule Dantex.Providers.Gemini do
           |> Enum.filter(fn part -> Map.has_key?(part, "functionCall") end)
           |> Enum.map(fn part ->
             function_call = Map.get(part, "functionCall", %{})
+
             %{
-              id: UUID.uuid4(), # Gemini might not provide IDs, so we generate one
+              # Gemini might not provide IDs, so we generate one
+              id: UUID.uuid4(),
               type: "function",
               function: %{
                 name: Map.get(function_call, "name", ""),

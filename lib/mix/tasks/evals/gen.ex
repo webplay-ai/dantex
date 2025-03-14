@@ -86,14 +86,18 @@ defmodule Mix.Tasks.Evals.Gen do
         metric = RegexMatchMetric.new(~r/4/)
 
         # Define your agent/model if not provided
-        final_agent = if agent do
-          agent
-        else
-          Agent.new(provider: :openai, model: "gpt-4o-mini")
-        end
 
         # Just return the setup; it will be run and results will be printed to html
-        {:ok, final_agent, metric, test_cases}
+        {:ok, build_agent(agent), metric, test_cases}
+      end
+
+      # Define your agent/model if not provided
+      def build_agent(agent) when is_nil(agent) do
+        Agent.new(provider: :gemini, model: "gemini-2.0-flash")
+      end
+
+      def build_agent(agent) do
+        agent
       end
     end
     """

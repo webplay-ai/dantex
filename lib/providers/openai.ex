@@ -1,8 +1,22 @@
 defmodule Dantex.Providers.OpenAI do
+  @supported_models [
+    "gpt-4o-2024-08-06",
+    "gpt-4o-mini-2024-07-18",
+    "gpt-3.5-turbo-0125",
+    "o3-mini-2025-01-31",
+    "o1-mini-2024-09-12",
+    "o1-2024-12-17",
+    "gpt-4.5-preview-2025-02-27"
+  ]
+
   @behaviour Dantex.Provider
 
   require Logger
 
+  @spec chat_completion(binary(), [Dantex.Message.t()]) ::
+          {:error, <<_::64, _::_*8>>}
+          | {:rate_limit, <<_::152>>}
+          | {:ok, [Dantex.Message.t()], %{total_tokens: integer()}}
   @doc """
   Makes a completion request to OpenAI's GPT-4 model.
 
@@ -28,6 +42,10 @@ defmodule Dantex.Providers.OpenAI do
           | {:error, String.t()}
           | {:rate_limit, String.t()}
   def chat_completion(model, messages, tools \\ []) do
+    unless model in @supported_models do
+      {:error, "Invalid model"}
+    end
+
     api_key = Dantex.Providers.Config.get_api_key(:openai)
     cfg = OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(110_000)
 
@@ -72,7 +90,8 @@ defmodule Dantex.Providers.OpenAI do
         %{role: role, content: content, tool_calls: tool_calls} when not is_nil(tool_calls) ->
           %{role: role, content: content, tool_calls: tool_calls}
 
-        %{role: role, content: content, tool_call_id: tool_call_id} when not is_nil(tool_call_id) ->
+        %{role: role, content: content, tool_call_id: tool_call_id}
+        when not is_nil(tool_call_id) ->
           %{role: role, content: content, tool_call_id: tool_call_id}
 
         %{role: role, content: content} ->
@@ -95,16 +114,18 @@ defmodule Dantex.Providers.OpenAI do
       |> Enum.map(fn
         %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}} ->
           # Convert tool_calls to our structured type
-          formatted_tool_calls = Enum.map(tool_calls, fn tool_call ->
-            %{
-              id: tool_call["id"],
-              type: tool_call["type"],
-              function: %{
-                name: tool_call["function"]["name"],
-                arguments: tool_call["function"]["arguments"]
+          formatted_tool_calls =
+            Enum.map(tool_calls, fn tool_call ->
+              %{
+                id: tool_call["id"],
+                type: tool_call["type"],
+                function: %{
+                  name: tool_call["function"]["name"],
+                  arguments: tool_call["function"]["arguments"]
+                }
               }
-            }
-          end)
+            end)
+
           %Message{role: role, content: content, tool_calls: formatted_tool_calls}
 
         %{"message" => %{"role" => role, "content" => content}} ->
@@ -120,5 +141,4 @@ defmodule Dantex.Providers.OpenAI do
   end
 
   defp parse_response(_), do: {:error, "Invalid message format"}
-
 end
