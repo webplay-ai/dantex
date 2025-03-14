@@ -15,13 +15,10 @@ defmodule Dantex.Message do
           content: String.t() | nil,
           tool_calls: list(tool_call) | nil,
           tool_call_id: String.t() | nil,
-          name: String.t() | nil,
-          function: String.t() | nil,
-          arguments: map() | nil
         }
 
   @derive Jason.Encoder
-  defstruct [:role, :content, :tool_calls, :tool_call_id, :name, :function, :arguments]
+  defstruct [:role, :content, :tool_calls, :tool_call_id]
 
   @spec system(String.t()) :: t()
   def system(message) do
@@ -47,8 +44,8 @@ defmodule Dantex.Message do
     }
   end
 
-  @spec tool_call(String.t(), String.t(), String.t(), map()) :: t()
-  def tool_call(tool_call_id, name, function, arguments) do
+  @spec tool_call(String.t(), String.t(), map()) :: t()
+  def tool_call(tool_call_id, name, arguments) do
     %__MODULE__{
       role: "assistant",
       content: nil,

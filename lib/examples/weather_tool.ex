@@ -31,5 +31,4 @@ defmodule Dantex.Examples.WeatherTool do
     {:ok, result}
   end
 
-
 end
