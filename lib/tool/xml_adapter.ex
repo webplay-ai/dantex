@@ -142,4 +142,131 @@ defmodule Dantex.Tool.XMLAdapter do
     Regex.match?(~r/<\w+>.*<\/\w+>/s, value)
   end
 
+
+  @doc """
+  Builds XML documentation for a list of tools.
+
+  This function generates XML-formatted documentation for each tool in the list,
+  including the tool name, description, input schema, and output schema.
+  The generated XML can be included in a system prompt to instruct an AI model
+  on how to use these tools.
+
+  ## Examples
+
+      iex> tools = [Dantex.Examples.WeatherTool]
+      iex> Dantex.Tool.XMLAdapter.build_tool_docs(tools)
+      "# Tool: get_weather\\n\\nGet the weather forecast for a location\\n\\n## Input Parameters\\n\\n<get_weather>\\n  <location>String, e.g. 'San Francisco'</location>\\n  <units>String, e.g. 'metric' or 'imperial' (default: metric)</units>\\n  <days>Integer, e.g. 1-10 (default: 1)</days>\\n</get_weather>\\n\\n## Output Format\\n\\n```xml\\n<result>\\n  <location>String</location>\\n  <current_temp>Float</current_temp>\\n  <conditions>String</conditions>\\n  <forecast>Array of daily forecasts</forecast>\\n</result>\\n```\\n"
+  """
+  @spec build_tool_docs(list(Tool.t())) :: String.t()
+  def build_tool_docs(tools) do
+    tools
+    |> Enum.map(&build_tool_doc/1)
+    |> Enum.join("\n\n")
+  end
+
+  defp build_tool_doc(tool) do
+    name = tool.tool_name()
+    description = tool.tool_description()
+
+    input_schema = Tool.get_input_schema(tool)
+    output_schema = Tool.get_output_schema(tool)
+
+    input_doc = build_input_doc(name, input_schema)
+    output_doc = build_output_doc(output_schema)
+
+    """
+    # Tool: #{name}
+
+    #{description}
+
+    ## Input Parameters #{name}
+
+    #{input_doc}
+
+    ## Output Format #{name}
+
+    #{output_doc}
+    """
+  end
+
+  defp build_input_doc(tool_name, nil), do: "<#{tool_name}>\n  <!-- No parameters required -->\n</#{tool_name}>"
+
+  defp build_input_doc(tool_name, schema) do
+    fields = schema.__schema__(:fields)
+
+    params =
+      fields
+      |> Enum.map(fn field ->
+        type = schema.__schema__(:type, field)
+        description = format_type_description(type)
+
+        # Check if field has a default value
+        default_info =
+          if has_default?(schema, field) do
+            " (default: #{get_default_value(schema, field)})"
+          else
+            ""
+          end
+
+        "  <#{field}>#{description}#{default_info}</#{field}>"
+      end)
+      |> Enum.join("\n")
+
+    "<#{tool_name}>\n#{params}\n</#{tool_name}>"
+  end
+
+  defp build_output_doc(nil), do: "<result>\n  <!-- No specific output format -->\n</result>"
+
+  defp build_output_doc(schema) do
+    fields = schema.__schema__(:fields)
+
+    params =
+      fields
+      |> Enum.map(fn field ->
+        type = schema.__schema__(:type, field)
+        description = format_type_description(type, true)
+
+        "  <#{field}>#{description}</#{field}>"
+      end)
+      |> Enum.join("\n")
+
+    "<result>\n#{params}\n</result>"
+  end
+
+  # Format type descriptions for documentation
+  defp format_type_description(:string), do: "String, e.g. 'some string'"
+  defp format_type_description(:integer), do: "Integer, e.g. 1"
+  defp format_type_description(:float), do: "Float, e.g. 1.27"
+  defp format_type_description(:boolean), do: "Boolean, e.g. true"
+  defp format_type_description(:map), do: "Object, e.g. { key: value }"
+  defp format_type_description({:array, _}), do: "Array"
+  defp format_type_description(:date), do: "Date string, e.g. '2024-07-20'"
+  defp format_type_description(:time), do: "Time string, e.g. '12:00:00'"
+  defp format_type_description(:naive_datetime), do: "DateTime string, e.g. '2024-07-20T12:00:00'"
+  defp format_type_description(:utc_datetime), do: "UTC DateTime string, e.g. '2024-07-20T12:00:00Z'"
+  defp format_type_description(_), do: "Value"
+
+  # Format type descriptions with additional context for output documentation
+  defp format_type_description({:array, _}, true), do: "Array of items"
+  defp format_type_description(_, true), do: "Value"
+
+  defp has_default?(schema, field) do
+    # Check if the field has a default value in the schema
+    # This is a simplified approach - in a real implementation, you would need to
+    # check the schema's changeset function or other metadata
+    schema.__struct__()
+    |> Map.from_struct()
+    |> Map.has_key?(field)
+  end
+
+  defp get_default_value(schema, field) do
+    # Get the default value for a field
+    # This is a simplified approach - in a real implementation, you would need to
+    # check the schema's changeset function or other metadata
+    schema.__struct__()
+    |> Map.from_struct()
+    |> Map.get(field)
+    |> inspect()
+  end
+
 end

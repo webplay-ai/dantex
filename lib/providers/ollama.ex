@@ -144,7 +144,7 @@ defmodule Dantex.Providers.Ollama do
 
   @spec parse_response(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  defp parse_response(response = %{
+  defp parse_response(%{
          "message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls},
          "eval_count" => eval_count
        }) do
