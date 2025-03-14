@@ -124,8 +124,37 @@ defmodule Mix.Tasks.Evals.Gen do
     You can also specify a provider and model to use:
 
     ```
-    mix evals.run #{eval_name} --provider openai --model gpt-4
+    mix evals.run #{eval_name} --provider gemini --model gemini-2.0-flash
     ```
+
+    ## Supported Models
+
+    | Provider | Model |
+    |---|---|
+    | Ollama | gemma3:4b |
+    | Ollama | gemma3:1b |
+    | Ollama | gemma3:7b |
+    | Ollama | gemma3:12b |
+    | Ollama | deepseek-r1:1.5b |
+    | Ollama | deepseek-r1:7b |
+    | Ollama | deepseek-r1:8b |
+    | Ollama | deepseek-r1:14b |
+    | Ollama | deepseek-r1:32b |
+    | Ollama | llama3.2 |
+    | Ollama | llama3.2:1b |
+    | Gemini | gemini-2.0-flash |
+    | Gemini | gemini-2.0-flash-lite |
+    | Gemini | gemini-1.5-flash |
+    | Gemini | gemini-1.5-flash-8b |
+    | Gemini | gemini-1.5-pro |
+    | OpenAI | gpt-4o-2024-08-06 |
+    | OpenAI | gpt-4o-mini-2024-07-18 |
+    | OpenAI | gpt-3.5-turbo-0125 |
+    | OpenAI | o3-mini-2025-01-31 |
+    | OpenAI | o1-mini-2024-09-12 |
+    | OpenAI | o1-2024-12-17 |
+    | OpenAI | gpt-4.5-preview-2025-02-27 |
+
 
     ## Customizing the Evaluation
 

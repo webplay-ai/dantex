@@ -13,15 +13,25 @@ defmodule Dantex.Providers.Config do
         # No providers configured
         nil
 
-      providers ->
+      providers when is_list(providers) ->
         case Keyword.get(providers, provider) do
           nil ->
             # Provider not configured
             nil
 
-        config ->
-          Map.get(config, key)
-      end
+          config ->
+            Map.get(config, key)
+        end
+
+      providers when is_map(providers) ->
+        case Map.get(providers, provider) do
+          nil ->
+            # Provider not configured
+            nil
+
+          config ->
+            Map.get(config, key)
+        end
     end
   end
 end

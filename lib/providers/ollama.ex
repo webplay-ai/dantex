@@ -47,12 +47,7 @@ defmodule Dantex.Providers.Ollama do
       {:error, "Invalid model"}
     end
 
-    api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base)
-
-    if api_base == nil do
-      api_base = @default_api_base
-    end
-
+    api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base) || @default_api_base
     url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]
@@ -149,7 +144,7 @@ defmodule Dantex.Providers.Ollama do
 
   @spec parse_response(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  defp parse_response(%{
+  defp parse_response(response = %{
          "message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls},
          "eval_count" => eval_count
        }) do

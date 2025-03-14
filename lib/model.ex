@@ -26,8 +26,13 @@ defmodule Dantex.Model do
       nil ->
         raise "No providers configured. Please configure at least one provider in your application's config.exs."
 
-      providers ->
+      providers when is_list(providers) ->
         unless Keyword.has_key?(providers, provider_key) do
+          raise "Provider #{provider_key} not configured. Please configure it in your application's config.exs."
+        end
+
+      providers when is_map(providers) ->
+        unless Map.has_key?(providers, provider_key) do
           raise "Provider #{provider_key} not configured. Please configure it in your application's config.exs."
         end
     end

@@ -20,7 +20,11 @@ defmodule Mix.Tasks.Evals.Run do
 
   @impl Mix.Task
   def run(args) do
+    # Load runtime configuration
+    Mix.Task.run("app.config")
+
     # Start the applications needed for the evaluation
+    Application.ensure_all_started(:dantex)
     Application.ensure_all_started(:httpoison)
     Application.ensure_all_started(:goth)
     Application.ensure_all_started(:jason)
@@ -166,7 +170,8 @@ defmodule Mix.Tasks.Evals.Run do
 
     # Create an agent if provider and model are specified
     agent = if provider && model do
-      provider_atom = String.to_existing_atom(provider)
+      # Ensure the provider atom exists before using it
+      provider_atom = String.to_atom(provider)
       Dantex.Agent.new(provider: provider_atom, model: model)
     else
       nil
