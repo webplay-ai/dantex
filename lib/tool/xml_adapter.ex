@@ -32,7 +32,7 @@ defmodule Dantex.Tool.XMLAdapter do
           {:error, reason}
       end
     else
-      {:ok, nil} -> {:ok, nil}
+      {:ok, nil} -> {:ok, message}
       {:error, reason} -> {:error, reason}
     end
   end

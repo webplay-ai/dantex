@@ -17,7 +17,6 @@ defmodule Dantex.Agent do
 
       # or a mock model so we can unit or end 2 end test our business logic
       mock = Model.mock([%{ role: system, content: "foo"}])
-      mock.pushMessages([%{ role: user, content: "another message"}])
 
       # Define a plain tool
       defmodule DiceTool do
@@ -35,7 +34,7 @@ defmodule Dantex.Agent do
       agent = Agent.new(
         provider: :openai,
         model: "gpt-4o-mini,
-        messages: [],
+        messages: mock,
         tools: [DiceTool], // optional
         max_failed_retries: 3 // optional
       )
@@ -45,7 +44,7 @@ defmodule Dantex.Agent do
   """
 
   alias Dantex.{Tool, Model, Message, Provider}
-  alias Dantex.Tool.{OpenAIAdapter, XMLAdapter, ToolAdapter}
+  alias Dantex.Tool.{OpenAIAdapter, ToolAdapter}
 
   @type t :: %__MODULE__{
           model: Model.t(),
@@ -54,7 +53,6 @@ defmodule Dantex.Agent do
           tool_history: [Tool.ToolHistory.t()],
           max_failed_retries: non_neg_integer() | nil,
           tool_adapter: module()
-          # logger: module() | nil
         }
 
   defstruct [
@@ -64,7 +62,6 @@ defmodule Dantex.Agent do
     :tool_history,
     :max_failed_retries,
     :tool_adapter
-    # :logger
   ]
 
   @doc """
@@ -179,68 +176,85 @@ defmodule Dantex.Agent do
   @spec run(t(), Message.t() | String.t()) ::
           {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()} | {:error, term()}
   def run(%__MODULE__{} = agent, message) do
-    # Step 1: Add the message to agent.messages
-    {:ok, messages} = build_messages(agent, message)
-
-    # Step 2: Run chat completion
-    case chat_completion(agent, messages) do
-      {:ok, {last_msg, all_msgs}, usage} ->
-        # Step 3: Extract tool calls from the response using the tool adapter
-        case agent.tool_adapter.extract_function_calls(last_msg) do
-
-          # If there are tool calls, process them
-          {:ok, last_msg} when is_list(last_msg.tool_calls) and length(last_msg.tool_calls) > 0 ->
-
-            # Check max_failed_retries limit
-            case check_max_failed_retries(agent, last_msg.tool_calls) do
-              {:ok } ->
-                # Now, lets execute the tool calls
-                tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls)
-                updated_messages = all_msgs ++ tool_result_messages
-
-                # Convert tool result messages to the format expected by update_tool_history
-                tool_results = Enum.map(tool_result_messages, fn message ->
-                  # Find the original tool call that corresponds to this result
-                  tool_call = Enum.find_value(last_msg.tool_calls, fn tc ->
-                    if tc.id == message.tool_call_id, do: tc, else: nil
-                  end)
-
-                  # Extract the result from the message
-                  result = message.content
-
-                  {tool_call, message, result}
-                end)
-
-                updated_tool_history = update_tool_history(agent.tool_history, tool_results)
-                updated_agent = %{agent |
-                  messages: updated_messages,
-                  tool_history: updated_tool_history
-                }
-                {:ok, {last_msg, updated_messages, updated_agent, tool_results}, usage}
-
-              # exceeded max retries for specific tool call
-              {:error, reason} ->
-                updated_messages = all_msgs ++ [%Message{role: "assistant", content: "Could not execute tool call, reached max failed retries for last tool call.\nError details:\n#{inspect(reason)}"}]
-                updated_agent = %{agent | messages: updated_messages}
-                {:ok, {last_msg, updated_messages, updated_agent, nil}, usage}
-            end
-
-          # No tool calls, just return the result
-          {:ok, last_msg} ->
-            updated_agent = %{agent | messages: messages ++ [last_msg]}
-            {:ok, {last_msg, all_msgs, updated_agent, nil}, usage}
-
-          # Error, also return a message
-          {:error, reason} ->
-            Logger.error("Error extracting tool calls: #{reason}")
-            updated_messages = all_msgs ++ [%Message{role: "assistant", content: "Error extracting tool call:\n#{inspect(reason)}"}]
-            updated_agent = %{agent | messages: updated_messages}
-            {:ok, {last_msg, all_msgs, updated_agent, nil}, usage}
-        end
-
-      error ->
-        error
+    with {:ok, messages} <- build_messages(agent, message),
+         {:ok, {last_msg, all_msgs}, usage} <- chat_completion(agent, messages),
+         {:ok, processed_msg} <- agent.tool_adapter.extract_function_calls(last_msg) do
+      process_message(agent, processed_msg, messages, all_msgs, usage)
+    else
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Processes the message based on whether it contains tool calls or not.
+  """
+  @spec process_message(t(), Message.t(), [Message.t()], [Message.t()], Provider.usage()) ::
+          {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()}
+  defp process_message(agent, %{tool_calls: tool_calls} = last_msg, messages, all_msgs, usage)
+       when is_list(tool_calls) and length(tool_calls) > 0 do
+    process_tool_calls(agent, last_msg, all_msgs, usage)
+  end
+
+  defp process_message(agent, last_msg, messages, all_msgs, usage) do
+    # No tool calls, just return the result
+    updated_agent = %{agent | messages: messages ++ [last_msg]}
+    {:ok, {last_msg, all_msgs, updated_agent, nil}, usage}
+  end
+
+  @doc """
+  Processes tool calls by checking retry limits and executing the tools.
+  """
+  @spec process_tool_calls(t(), Message.t(), [Message.t()], Provider.usage()) ::
+          {:ok, {Message.t(), [Message.t()], t(), list(tool_result()) | nil}, Provider.usage()}
+  defp process_tool_calls(agent, last_msg, all_msgs, usage) do
+    case check_max_failed_retries(agent, last_msg.tool_calls) do
+      {:ok} ->
+        execute_and_update_agent(agent, last_msg, all_msgs, usage)
+
+      {:error, reason} ->
+        error_message = %Message{
+          role: "assistant",
+          content: "Could not execute tool call, reached max failed retries for last tool call.\nError details:\n#{inspect(reason)}"
+        }
+        updated_messages = all_msgs ++ [error_message]
+        updated_agent = %{agent | messages: updated_messages}
+        {:ok, {last_msg, updated_messages, updated_agent, nil}, usage}
+    end
+  end
+
+  @doc """
+  Executes tool calls and updates the agent with results.
+  """
+  @spec execute_and_update_agent(t(), Message.t(), [Message.t()], Provider.usage()) ::
+          {:ok, {Message.t(), [Message.t()], t(), list(tool_result())}, Provider.usage()}
+  defp execute_and_update_agent(agent, last_msg, all_msgs, usage) do
+    tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls)
+    updated_messages = all_msgs ++ tool_result_messages
+
+    tool_results =
+      tool_result_messages
+      |> Enum.map(fn message ->
+        tool_call = find_matching_tool_call(last_msg.tool_calls, message.tool_call_id)
+        {tool_call, message, message.content}
+      end)
+
+    updated_tool_history = update_tool_history(agent.tool_history, tool_results)
+    updated_agent = %{agent |
+      messages: updated_messages,
+      tool_history: updated_tool_history
+    }
+
+    {:ok, {last_msg, updated_messages, updated_agent, tool_results}, usage}
+  end
+
+  @doc """
+  Finds the tool call that matches the given tool call ID.
+  """
+  @spec find_matching_tool_call(list(Message.tool_call()), String.t()) :: Message.tool_call() | nil
+  defp find_matching_tool_call(tool_calls, tool_call_id) do
+    Enum.find_value(tool_calls, fn tc ->
+      if tc.id == tool_call_id, do: tc, else: nil
+    end)
   end
 
   @doc """
@@ -322,34 +336,34 @@ defmodule Dantex.Agent do
     Model.chat_completion(agent.model, messages, agent.tools)
   end
 
-@doc """
-Executes tool calls using the provided tools.
-Returns a list of tool result messages.
-"""
-@spec execute_tool_calls([Tool.t()], list(Message.tool_call())) :: [Message.t()]
-defp execute_tool_calls(tools, tool_calls) do
-  tool_calls
-  |> Enum.flat_map(fn message ->
-    Enum.map(message.tool_calls, fn tool_call ->
-      tool_name = Map.get(tool_call, :function) |> Map.get(:name)
-      tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
+  @doc """
+  Executes tool calls using the provided tools.
+  Returns a list of tool result messages.
+  """
+  @spec execute_tool_calls([Tool.t()], list(Message.tool_call())) :: [Message.t()]
+  defp execute_tool_calls(tools, tool_calls) do
+    tool_calls
+    |> Enum.flat_map(fn message ->
+      Enum.map(message.tool_calls, fn tool_call ->
+        tool_name = Map.get(tool_call, :function) |> Map.get(:name)
+        tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
 
-      if tool == nil do
-        Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
-      else
-        arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
+        if tool == nil do
+          Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
+        else
+          arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
-        # Execute the tool with decoded arguments
-        case tool.call(arguments) do
-          {:ok, result} ->
-            Message.tool_result(Map.get(tool_call, :id), result)
+          # Execute the tool with decoded arguments
+          case tool.call(arguments) do
+            {:ok, result} ->
+              Message.tool_result(Map.get(tool_call, :id), result)
 
-          {:error, error} ->
-            Message.tool_result(Map.get(tool_call, :id), %{error: error})
+            {:error, error} ->
+              Message.tool_result(Map.get(tool_call, :id), %{error: error})
+          end
         end
-      end
+      end)
     end)
-  end)
-end
+  end
 
 end

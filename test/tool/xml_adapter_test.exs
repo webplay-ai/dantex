@@ -1,13 +1,16 @@
 defmodule Dantex.Tool.XMLAdapterTest do
   use ExUnit.Case
 
+  alias Dantex.{Message, Tool}
   alias Dantex.Tool.XMLAdapter
 
-  describe "extract_function_calls/1" do
+  describe "extract_tool_calls/1" do
     test "successfully extracts a simple function call" do
       content = "<function_calls><scrape_page><url>https://voicezap.ai</url></scrape_page></function_calls>"
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       assert tool_call.type == "function"
       assert tool_call.function.name == "scrape_page"
       assert tool_call.function.arguments == ~s({"url":"https://voicezap.ai"})
@@ -23,8 +26,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </search_products>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       assert tool_call.type == "function"
       assert tool_call.function.name == "search_products"
 
@@ -34,32 +39,37 @@ defmodule Dantex.Tool.XMLAdapterTest do
       assert arguments["sort_by"] == "price"
     end
 
-    test "returns {:ok, nil} for nil input" do
-      assert {:ok, nil} = XMLAdapter.extract_function_calls(nil)
+    test "returns {:ok, message} for nil input" do
+      message = %Message{content: nil}
+      assert {:ok, ^message} = XMLAdapter.extract_tool_calls(message)
     end
 
-    test "returns {:ok, nil} for empty input" do
-      assert {:ok, nil} = XMLAdapter.extract_function_calls("")
+    test "returns {:ok, message} for empty input" do
+      message = %Message{content: ""}
+      assert {:ok, ^message} = XMLAdapter.extract_tool_calls(message)
     end
 
-    test "returns {:ok, nil} when no function calls are found" do
-      content = "<function_calls></function_calls>"
-      assert {:ok, nil} = XMLAdapter.extract_function_calls(content)
+    test "returns {:ok, message} when no function calls are found" do
+      message = %Message{content: "<function_calls></function_calls>"}
+      assert {:ok, ^message} = XMLAdapter.extract_tool_calls(message)
     end
 
     test "returns error for unclosed tags" do
       content = "<function_calls><get_weather><location>London</location></get_weather>"
-      assert {:error, "Unclosed tags detected"} = XMLAdapter.extract_function_calls(content)
+      message = %Message{content: content}
+      assert {:error, "Unclosed tags detected"} = XMLAdapter.extract_tool_calls(message)
     end
 
     test "returns error for mismatched tags" do
       content = "<function_calls><get_weather><location>London</location></wrong_tag></function_calls>"
-      assert {:error, "Mismatched tags detected"} = XMLAdapter.extract_function_calls(content)
+      message = %Message{content: content}
+      assert {:error, "Mismatched tags detected"} = XMLAdapter.extract_tool_calls(message)
     end
 
     test "returns error for self-enclosing tags" do
       content = "<function_calls><get_weather/></function_calls>"
-      assert {:error, "Self-enclosing tags are not supported"} = XMLAdapter.extract_function_calls(content)
+      message = %Message{content: content}
+      assert {:error, "Self-enclosing tags are not supported"} = XMLAdapter.extract_tool_calls(message)
     end
 
     test "returns error for multiple function calls" do
@@ -69,8 +79,9 @@ defmodule Dantex.Tool.XMLAdapterTest do
         <get_news><category>tech</category></get_news>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:error, message} = XMLAdapter.extract_function_calls(content)
+      assert {:error, message} = XMLAdapter.extract_tool_calls(message)
       assert String.contains?(message, "Multiple function calls found")
     end
 
@@ -83,8 +94,9 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </get_weather>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:error, "Duplicate parameter found: location"} = XMLAdapter.extract_function_calls(content)
+      assert {:error, "Duplicate parameter found: location"} = XMLAdapter.extract_tool_calls(message)
     end
 
     test "skips parameters with nested XML tags" do
@@ -96,8 +108,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </complex_function>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
 
       # Only the simple parameter should be included
@@ -117,8 +131,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://voicezap.ai"
     end
@@ -132,8 +148,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://example.com/page?param=value&amp;other=123"
       assert arguments["selector"] == "#item > div.class[data-attr=\"value\"]"
@@ -149,8 +167,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
       </function_calls>
       Some text after the function calls
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://voicezap.ai"
     end
@@ -164,8 +184,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://example.com/page?q=search&amp;lang=en"
       assert arguments["selector"] == "div.item > span.title"
@@ -181,8 +203,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://example.com/café"
       assert arguments["selector"] == ".résumé"
@@ -198,8 +222,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://example.com"
       assert arguments["selector"] == "<![CDATA[div.item > span[data-attr=\"complex<value>\"]]]>"
@@ -216,8 +242,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert arguments["url"] == "https://example.com"
       assert arguments["selector"] == ".content"
@@ -232,8 +260,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
       assert String.starts_with?(arguments["url"], "https://example.com/")
       assert String.length(arguments["url"]) > 1000
@@ -250,13 +280,14 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </scrape_page>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:error, message} = XMLAdapter.extract_function_calls(content)
+      assert {:error, message} = XMLAdapter.extract_tool_calls(message)
       assert String.contains?(message, "Multiple function calls found: scrape_page")
     end
   end
 
-  describe "extract_parameters/1 (via extract_function_calls)" do
+  describe "extract_parameters/1 (via extract_tool_calls)" do
     test "handles whitespace in parameter values" do
       content = """
       <function_calls>
@@ -265,8 +296,10 @@ defmodule Dantex.Tool.XMLAdapterTest do
         </search>
       </function_calls>
       """
+      message = %Message{content: content}
 
-      assert {:ok, [tool_call]} = XMLAdapter.extract_function_calls(content)
+      assert {:ok, result_message} = XMLAdapter.extract_tool_calls(message)
+      assert [tool_call] = result_message.tool_calls
       arguments = Jason.decode!(tool_call.function.arguments)
 
       # The whitespace should be trimmed
