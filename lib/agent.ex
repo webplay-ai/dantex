@@ -57,7 +57,8 @@ defmodule Dantex.Agent do
           messages: [Message.t()],
           tool_history: [Tool.ToolHistory.t()],
           max_failed_retries: non_neg_integer() | nil,
-          tool_adapter: module()
+          tool_adapter: module(),
+          context: map()
         }
 
   defstruct [
@@ -66,7 +67,8 @@ defmodule Dantex.Agent do
     :messages,
     :tool_history,
     :max_failed_retries,
-    :tool_adapter
+    :tool_adapter,
+    :context
   ]
 
   @doc """
@@ -80,6 +82,7 @@ defmodule Dantex.Agent do
     * `:tools` - List of tool modules to use (default: [])
     * `:max_failed_retries` - The maximum number of failed retries for a tool call with the same arguments (optional, default: nil)
     * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter for OpenAI provider, XMLAdapter for other providers)
+    * `:context` - Map of context data passed to tools (default: %{})
 
   ## Example
 
@@ -89,7 +92,8 @@ defmodule Dantex.Agent do
         messages: [Message{content: "You are a helpful assistant", role: "system"}],
         tools: [WeatherTool, TimeTool],
         max_failed_retries: 3,
-        tool_adapter: OpenAIAdapter
+        tool_adapter: OpenAIAdapter,
+        context: %{weather_api_key: "your_key", user_id: 123}
       )
   """
   require Logger
@@ -99,6 +103,7 @@ defmodule Dantex.Agent do
           | {:model, String.t()}
           | {:messages, [Message.t()]}
           | {:tools, [Tool.t()]}
+          | {:context, map()}
           | {:max_failed_retries, non_neg_integer()}
           | {:tool_adapter, ToolAdapter.t()}
         ]) ::
@@ -110,6 +115,7 @@ defmodule Dantex.Agent do
     messages = Keyword.get(opts, :messages, [])
     max_failed_retries = Keyword.get(opts, :max_failed_retries, 0) # 0, equals disabled
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
+    context = Keyword.get(opts, :context, %{})
 
     %__MODULE__{
       model: Model.new(provider, model),
@@ -117,7 +123,8 @@ defmodule Dantex.Agent do
       tools: tools,
       tool_history: [],
       max_failed_retries: max_failed_retries,
-      tool_adapter: tool_adapter
+      tool_adapter: tool_adapter,
+      context: context
     }
   end
 
@@ -229,7 +236,7 @@ defmodule Dantex.Agent do
   """
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
-    tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls)
+    tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
     updated_messages = agent.messages ++ tool_result_messages
 
     tool_results =
@@ -338,11 +345,11 @@ defmodule Dantex.Agent do
   end
 
   @doc """
-  Executes tool calls using the provided tools.
+  Executes tool calls using the provided tools with context.
   Returns a list of tool result messages.
   """
-  @spec execute_tool_calls([Tool.t()], list(Message.tool_call())) :: [Message.t()]
-  defp execute_tool_calls(tools, tool_calls) do
+  @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [Message.t()]
+  defp execute_tool_calls(tools, tool_calls, context) do
     tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]
     tool_calls
     |> Enum.map(fn tool_call ->
@@ -353,8 +360,9 @@ defmodule Dantex.Agent do
       else
         arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
-        # Execute the tool with decoded arguments
-        case tool.call(arguments) do
+        # Execute the tool with decoded arguments and context
+        params_with_context = Map.put(arguments, :context, context)
+        case tool.call(params_with_context) do
           {:ok, result} ->
             Message.tool_result(Map.get(tool_call, :id), result)
 
