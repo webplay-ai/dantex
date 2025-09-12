@@ -20,19 +20,6 @@ defmodule Dantex.Tool.JSONSchema do
   end
 
   @doc """
-  Generates JSON Schema for a tool's output schema.
-  """
-  def generate_output_json_schema(tool) do
-    case Validation.get_output_schema(tool) do
-      nil ->
-        Jason.encode!(%{type: "object", properties: %{}})
-
-      schema ->
-        schema |> JSONSchema.from_ecto_schema()
-    end
-  end
-
-  @doc """
   Generates a complete JSON Schema for the tool to be used with OpenAI or Ollama function calling.
   """
   def generate_tool_json_schema(tool) do

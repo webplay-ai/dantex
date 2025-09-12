@@ -1,6 +1,6 @@
 defmodule Dantex.Tool.Validation do
   @moduledoc """
-  Handles input and output validation for Dantex tools.
+  Handles input validation for Dantex tools.
   
   This module provides validation functionality using Ecto schemas,
   including helper functions to get schemas from tools and validate
@@ -18,16 +18,6 @@ defmodule Dantex.Tool.Validation do
   end
 
   @doc """
-  Validates output result against the tool's output schema.
-  """
-  def validate_output(tool, result) do
-    case get_output_schema(tool) do
-      nil -> {:ok, result}
-      schema -> validate_with_schema(schema, result)
-    end
-  end
-
-  @doc """
   Gets the input schema for a tool.
   """
   def get_input_schema(tool) do
@@ -39,34 +29,11 @@ defmodule Dantex.Tool.Validation do
   end
 
   @doc """
-  Gets the output schema for a tool.
-  """
-  def get_output_schema(tool) do
-    if function_exported?(tool, :__output_schema__, 0) do
-      tool.__output_schema__()
-    else
-      nil
-    end
-  end
-
-  @doc """
   Parses a JSON string using a tool's input schema.
   """
   def parse_input_json(tool, json_string) do
     with {:ok, data} <- Jason.decode(json_string),
          {:ok, validated} <- validate_input(tool, data) do
-      {:ok, validated}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  @doc """
-  Parses a JSON string using a tool's output schema.
-  """
-  def parse_output_json(tool, json_string) do
-    with {:ok, data} <- Jason.decode(json_string),
-         {:ok, validated} <- validate_output(tool, data) do
       {:ok, validated}
     else
       {:error, reason} -> {:error, reason}

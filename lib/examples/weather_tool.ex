@@ -1,13 +1,12 @@
 defmodule Dantex.Examples.WeatherTool do
   @moduledoc """
-  Example tool that demonstrates the use of Ecto schemas for input and output validation.
+  Example tool that demonstrates the use of Ecto schemas for input validation.
   """
   use Dantex.Tool
 
   tool :get_weather,
     description: "Get the weather forecast for a location",
-    input: Dantex.Examples.WeatherInputSchema,
-    output: Dantex.Examples.WeatherOutputSchema do
+    input: Dantex.Examples.WeatherInputSchema do
 
     # In a real implementation, this would call a weather API
     # Access context for API keys, user preferences, etc.

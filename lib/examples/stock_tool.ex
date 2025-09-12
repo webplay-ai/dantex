@@ -15,31 +15,13 @@ defmodule StockInputSchema do
   end
 end
 
-defmodule StockOutputSchema do
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key false
-  embedded_schema do
-    field :company, :string
-    field :date, :date
-    field :price, :float
-  end
-
-  def changeset(struct, params) do
-    struct
-    |> cast(params, [:company, :date, :price])
-    |> validate_required([:company, :date, :price])
-  end
-end
 
 defmodule Dantex.Examples.StockTool do
   use Dantex.Tool
 
   tool :get_stock_price,
     description: "Get stock price",
-    input: StockInputSchema,
-    output: StockOutputSchema do
+    input: StockInputSchema do
 
     # get api key from context - or something else
     _api_key = context[:api_key]
@@ -47,7 +29,7 @@ defmodule Dantex.Examples.StockTool do
     # In a real implementation, you would use the API key and make an API call
     # For now, return mock data based on the input
     
-    # The tool logic - return a map that will be validated against the output schema
+    # The tool logic - return structured data
     %{
       company: params.company,
       date: params.date,

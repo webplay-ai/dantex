@@ -17,23 +17,6 @@ defmodule CalculatorInputSchema do
   end
 end
 
-defmodule CalculatorOutputSchema do
-  use Ecto.Schema
-  import Ecto.Changeset
-
-  @primary_key false
-  embedded_schema do
-    field :result, :float
-    field :operation, :string
-    field :expression, :string
-  end
-
-  def changeset(struct, params) do
-    struct
-    |> cast(params, [:result, :operation, :expression])
-    |> validate_required([:result, :operation, :expression])
-  end
-end
 
 defmodule Dantex.Examples.CalculatorTool do
   @moduledoc """
@@ -44,8 +27,7 @@ defmodule Dantex.Examples.CalculatorTool do
 
   tool :calculate,
     description: "Perform basic mathematical operations (add, subtract, multiply, divide)",
-    input: CalculatorInputSchema,
-    output: CalculatorOutputSchema do
+    input: CalculatorInputSchema do
 
     # Access context if needed - could contain user preferences, settings, etc.
     precision = Map.get(context, :precision, 2)
@@ -67,7 +49,7 @@ defmodule Dantex.Examples.CalculatorTool do
     formatted_result = Float.round(result, precision)
     expression = "#{params.a} #{get_operator(params.operation)} #{params.b}"
 
-    # Return structured output that will be validated against CalculatorOutputSchema
+    # Return structured output
     %{
       result: formatted_result,
       operation: params.operation,

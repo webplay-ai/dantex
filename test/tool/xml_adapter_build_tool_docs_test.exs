@@ -4,7 +4,7 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
   alias Dantex.Tool.XMLAdapter
 
   describe "build_tool_docs/1" do
-    test "generates XML documentation for a tool with input and output schemas" do
+    test "generates XML documentation for a tool with input schema" do
       # Use the example weather tool
       tools = [Dantex.Examples.WeatherTool]
 
@@ -13,16 +13,13 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
       # Check that the result contains the expected elements
       assert String.contains?(result, "# Tool: get_weather")
       assert String.contains?(result, "Get the weather forecast for a location")
+      assert String.contains?(result, "## Input Parameters")
       assert String.contains?(result, "<get_weather>")
       assert String.contains?(result, "<location>")
-      assert String.contains?(result, "<units>")
       assert String.contains?(result, "<days>")
-      assert String.contains?(result, "## Output Format")
-      assert String.contains?(result, "<result>")
-      assert String.contains?(result, "<location>")
-      assert String.contains?(result, "<current_temp>")
-      assert String.contains?(result, "<conditions>")
-      assert String.contains?(result, "<forecast>")
+      # Should not contain output format anymore
+      refute String.contains?(result, "## Output Format")
+      refute String.contains?(result, "<result>")
     end
 
     test "generates documentation for multiple tools" do
@@ -32,11 +29,10 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
 
         tool :test_tool,
           description: "A test tool for testing",
-          input: [],
-          output: [] do
+          input: [] do
           _ = params
           _ = context
-          {:ok, "test result"}
+          "test result"
         end
       end
 
@@ -57,11 +53,10 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
 
         tool :no_schemas_tool,
           description: "A tool without schemas",
-          input: [],
-          output: [] do
+          input: [] do
           _ = params
           _ = context
-          {:ok, "result"}
+          "result"
         end
       end
 
@@ -73,7 +68,8 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
       assert String.contains?(result, "# Tool: no_schemas_tool")
       assert String.contains?(result, "A tool without schemas")
       assert String.contains?(result, "<!-- No parameters required -->")
-      assert String.contains?(result, "<!-- No specific output format -->")
+      # Should not contain output format references anymore
+      refute String.contains?(result, "## Output Format")
     end
   end
 

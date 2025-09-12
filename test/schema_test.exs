@@ -7,14 +7,14 @@ defmodule Dantex.SchemaTest do
   alias Dantex.Examples.WeatherTool
   alias Dantex.Tool
 
-  test "get_output_schema returns the correct schema for WeatherTool" do
-    output_schema = Tool.get_output_schema(WeatherTool)
-    assert output_schema != nil
-    assert output_schema == Dantex.Examples.WeatherOutputSchema
+  test "get_input_schema returns the correct schema for WeatherTool" do
+    input_schema = Tool.get_input_schema(WeatherTool)
+    assert input_schema != nil
+    assert input_schema == Dantex.Examples.WeatherInputSchema
   end
 
-  test "generate_output_json_schema works correctly for WeatherTool" do
-    schema_json = Tool.generate_output_json_schema(WeatherTool)
+  test "generate_input_json_schema works correctly for WeatherTool" do
+    schema_json = Tool.generate_input_json_schema(WeatherTool)
     assert schema_json != nil
     assert is_binary(schema_json)
 
@@ -26,8 +26,6 @@ defmodule Dantex.SchemaTest do
     # Check that the properties match what we expect
     properties = decoded["properties"]
     assert Map.has_key?(properties, "location")
-    assert Map.has_key?(properties, "current_temp")
-    assert Map.has_key?(properties, "conditions")
-    assert Map.has_key?(properties, "forecast")
+    assert Map.has_key?(properties, "days")
   end
 end

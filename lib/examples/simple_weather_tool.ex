@@ -10,12 +10,6 @@ defmodule Dantex.Examples.SimpleWeatherTool do
       location: [:string, required: true, min_length: 1],
       units: [:string, default: "celsius", enum: ["celsius", "fahrenheit"]],
       days: [:integer, default: 1, min: 1, max: 7]
-    ],
-    output: [
-      location: :string,
-      units: :string,
-      forecast: {:array, :map},
-      api_used: :string
     ] do
 
     # Access context 

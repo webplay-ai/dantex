@@ -74,29 +74,26 @@ defmodule Dantex.Tool do
   @doc """
   Defines a tool with the DSL syntax.
 
-  Supports both external Ecto schemas and inline schema definitions:
+  Supports both external Ecto schemas and inline schema definitions for input validation:
   """
   defmacro tool(name, opts, do: block) do
     description = Keyword.get(opts, :description, "")
     input_spec = Keyword.get(opts, :input)
-    output_spec = Keyword.get(opts, :output)
 
-    # Determine if input/output are inline schemas (lists) or external schemas (modules)
-    {input_schema, output_schema} = process_schema_specs(name, input_spec, output_spec)
+    # Determine if input is inline schema (list) or external schema (module)
+    input_schema = process_input_schema_spec(name, input_spec)
 
     quote do
-      # Generate dynamic schemas if inline definitions are provided
-      unquote(generate_inline_schemas(name, input_spec, output_spec))
+      # Generate dynamic schema if inline definition is provided
+      unquote(generate_inline_input_schema(name, input_spec))
 
       # Store the tool definition
-      @tool_definitions {unquote(name), unquote(description), unquote(input_schema),
-                         unquote(output_schema), unquote(Macro.escape(block))}
+      @tool_definitions {unquote(name), unquote(description), unquote(input_schema), unquote(Macro.escape(block))}
 
       # Set the attributes for this tool
       @tool_name Atom.to_string(unquote(name))
       @tool_description unquote(description)
       @input_schema unquote(input_schema)
-      @output_schema unquote(output_schema)
     end
   end
 
@@ -113,7 +110,6 @@ defmodule Dantex.Tool do
       Module.register_attribute(__MODULE__, :tool_name, persist: true)
       Module.register_attribute(__MODULE__, :tool_description, persist: true)
       Module.register_attribute(__MODULE__, :input_schema, persist: true)
-      Module.register_attribute(__MODULE__, :output_schema, persist: true)
 
       # Make the tool macro available in the module
       require unquote(__MODULE__)
@@ -132,7 +128,7 @@ defmodule Dantex.Tool do
     tool_definitions = Module.get_attribute(env.module, :tool_definitions)
 
     if tool_definitions && length(tool_definitions) > 0 do
-      {name, description, input_schema, output_schema, block} = hd(tool_definitions)
+      {name, description, input_schema, block} = hd(tool_definitions)
       
       quote do
         def tool_name do
@@ -143,13 +139,9 @@ defmodule Dantex.Tool do
           unquote(description)
         end
 
-        # Define functions to access the schemas
+        # Define function to access the input schema
         def __input_schema__ do
           unquote(input_schema)
-        end
-
-        def __output_schema__ do
-          unquote(output_schema)
         end
 
         # Generate the call function that wraps the tool logic
@@ -167,11 +159,7 @@ defmodule Dantex.Tool do
                    unquote(block)
                  end).()
 
-              # Validate the output
-              case Validation.validate_output(__MODULE__, result) do
-                {:ok, validated_result} -> {:ok, validated_result}
-                {:error, _} = error -> error
-              end
+              {:ok, result}
             rescue
               error -> {:error, Exception.message(error)}
             end
@@ -185,53 +173,27 @@ defmodule Dantex.Tool do
         def tool_name, do: nil
         def tool_description, do: nil
         def __input_schema__, do: nil
-        def __output_schema__, do: nil
       end
     end
   end
 
-  # Process schema specifications to determine if they're inline or external
-  defp process_schema_specs(name, input_spec, output_spec) do
-    input_schema =
-      if is_list(input_spec) do
-        create_dynamic_schema_name(name, "Input")
-      else
-        input_spec
-      end
-
-    output_schema =
-      if is_list(output_spec) do
-        create_dynamic_schema_name(name, "Output")
-      else
-        output_spec
-      end
-
-    {input_schema, output_schema}
+  # Process input schema specification to determine if it's inline or external
+  defp process_input_schema_spec(name, input_spec) do
+    if is_list(input_spec) do
+      create_dynamic_schema_name(name, "Input")
+    else
+      input_spec
+    end
   end
 
-  # Generate inline schema modules if needed
-  defp generate_inline_schemas(name, input_spec, output_spec) do
-    schemas = []
-
-    # Generate input schema if it's an inline definition
-    schemas =
-      if is_list(input_spec) do
-        input_module = create_dynamic_schema_name(name, "Input")
-        [create_inline_schema(input_module, input_spec) | schemas]
-      else
-        schemas
-      end
-
-    # Generate output schema if it's an inline definition  
-    schemas =
-      if is_list(output_spec) do
-        output_module = create_dynamic_schema_name(name, "Output")
-        [create_inline_schema(output_module, output_spec) | schemas]
-      else
-        schemas
-      end
-
-    {:__block__, [], schemas}
+  # Generate inline input schema module if needed
+  defp generate_inline_input_schema(name, input_spec) do
+    if is_list(input_spec) do
+      input_module = create_dynamic_schema_name(name, "Input")
+      create_inline_schema(input_module, input_spec)
+    else
+      quote do end
+    end
   end
 
   # Helper function to create dynamic schema module name
@@ -422,13 +384,9 @@ defmodule Dantex.Tool do
 
   # Delegate to the specialized modules for backward compatibility
   defdelegate validate_input(tool, params), to: Validation
-  defdelegate validate_output(tool, result), to: Validation
   defdelegate get_input_schema(tool), to: Validation
-  defdelegate get_output_schema(tool), to: Validation
   defdelegate parse_input_json(tool, json_string), to: Validation
-  defdelegate parse_output_json(tool, json_string), to: Validation
 
   defdelegate generate_input_json_schema(tool), to: JSONSchema
-  defdelegate generate_output_json_schema(tool), to: JSONSchema
   defdelegate generate_tool_json_schema(tool), to: JSONSchema
 end

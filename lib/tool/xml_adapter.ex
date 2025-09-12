@@ -156,23 +156,16 @@ defmodule Dantex.Tool.XMLAdapter do
     description = tool.tool_description()
 
     input_schema = Tool.get_input_schema(tool)
-    output_schema = Tool.get_output_schema(tool)
-
     input_doc = build_input_doc(name, input_schema)
-    output_doc = build_output_doc(output_schema)
 
     """
     # Tool: #{name}
 
     #{description}
 
-    ## Input Parameters #{name}
+    ## Input Parameters
 
     #{input_doc}
-
-    ## Output Format #{name}
-
-    #{output_doc}
     """
   end
 
@@ -206,27 +199,6 @@ defmodule Dantex.Tool.XMLAdapter do
     end
   end
 
-  defp build_output_doc(nil), do: "<result>\n  <!-- No specific output format -->\n</result>"
-
-  defp build_output_doc(schema) do
-    fields = schema.__schema__(:fields)
-
-    if Enum.empty?(fields) do
-      "<result>\n  <!-- No specific output format -->\n</result>"
-    else
-      params =
-        fields
-        |> Enum.map(fn field ->
-          type = schema.__schema__(:type, field)
-          description = format_type_description(type, true)
-
-          "  <#{field}>#{description}</#{field}>"
-        end)
-        |> Enum.join("\n")
-
-      "<result>\n#{params}\n</result>"
-    end
-  end
 
   # Format type descriptions for documentation
   defp format_type_description(:string), do: "String, e.g. 'some string'"
@@ -241,9 +213,6 @@ defmodule Dantex.Tool.XMLAdapter do
   defp format_type_description(:utc_datetime), do: "UTC DateTime string, e.g. '2024-07-20T12:00:00Z'"
   defp format_type_description(_), do: "Value"
 
-  # Format type descriptions with additional context for output documentation
-  defp format_type_description({:array, _}, true), do: "Array of items"
-  defp format_type_description(_, true), do: "Value"
 
   defp has_default?(schema, field) do
     # Check if the field has a default value in the schema
