@@ -11,9 +11,6 @@ At this point I believe Instructor_ex is the best framework in the Elixir ecosys
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `dantex` to your list of dependencies in `mix.exs`:
-
 ```elixir
 def deps do
   [
@@ -22,16 +19,12 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/dantex>.
-
 ## Features
 
-- Support for Ollama, OpenAI and Gemini
+- Support for Anthropic, Ollama, OpenAI and Gemini
 - Tool calling with modern DSL syntax
 - Flexible tool definitions using Ecto schemas or inline parameter specifications
-- Automatic input/output validation and JSON Schema generation for OpenAI function calling
+- Automatic input validation and JSON Schema generation for function calling
 - Context support for sharing data between tools and agents
 - Eval scaffolding using `mix evals.gen some_name_for_your_eval`
 - Run evals using on the same data set, using different models `mix evals.run some_name_for_your_eval --provider ollama --model gemma3:4b`
@@ -56,47 +49,27 @@ config :dantex, :providers,
   }
 ```
 
-## Supported Models
-
-| Provider | Model |
-|---|---|
-| Ollama | gemma3:4b |
-| Ollama | gemma3:1b |
-| Ollama | gemma3:7b |
-| Ollama | gemma3:12b |
-| Ollama | deepseek-r1:1.5b |
-| Ollama | deepseek-r1:7b |
-| Ollama | deepseek-r1:8b |
-| Ollama | deepseek-r1:14b |
-| Ollama | deepseek-r1:32b |
-| Ollama | llama3.2 |
-| Ollama | llama3.2:1b |
-| Gemini | gemini-2.0-flash |
-| Gemini | gemini-2.0-flash-lite |
-| Gemini | gemini-1.5-flash |
-| Gemini | gemini-1.5-flash-8b |
-| Gemini | gemini-1.5-pro |
-| OpenAI | gpt-4o-2024-08-06 |
-| OpenAI | gpt-4o-mini-2024-07-18 |
-| OpenAI | gpt-3.5-turbo-0125 |
-| OpenAI | o3-mini-2025-01-31 |
-| OpenAI | o1-mini-2024-09-12 |
-| OpenAI | o1-2024-12-17 |
-| Anthropic | claude-3-5-sonnet-20241022 |
-| Anthropic | claude-3-5-sonnet-20240620 |
-| Anthropic | claude-3-5-haiku-20241022 |
-| Anthropic | claude-3-opus-20240229 |
-| Anthropic | claude-3-sonnet-20240229 |
-| Anthropic | claude-3-haiku-20240307 |
-| OpenAI | gpt-4.5-preview-2025-02-27 |
-
 ## Usage
-
-### Creating Tools with the New DSL
 
 Dantex provides a modern DSL for defining tools with automatic validation and context support.
 
-#### Example 1: Tool with External Ecto Schemas
+```elixir
+alias Dantex.{Agent, Message}
+
+agent = Agent.new(
+  provider: :openai,
+  model: "gpt-4o-mini",
+  messages: [Message.system("You are a helpful assistant.")],
+  tools: [MyCalculatorTool, SimpleWeatherTool],
+  context: %{
+    precision: 3,
+  }
+)
+
+{:ok, response, updated_agent} = Agent.run(agent, "Calculate 15.5 + 23.2 and get weather for Tokyo")
+```
+
+You can define tools using Ecto schema's: 
 
 ```elixir
 defmodule CalculatorInputSchema do
@@ -118,24 +91,12 @@ defmodule CalculatorInputSchema do
   end
 end
 
-defmodule CalculatorOutputSchema do
-  use Ecto.Schema
-
-  @primary_key false
-  embedded_schema do
-    field :result, :float
-    field :operation, :string
-    field :expression, :string
-  end
-end
-
 defmodule MyCalculatorTool do
   use Dantex.Tool
 
   tool :calculate,
     description: "Perform mathematical operations",
-    input: CalculatorInputSchema,
-    output: CalculatorOutputSchema do
+    input: CalculatorInputSchema do
 
     # Access context if needed
     precision = Map.get(context, :precision, 2)
@@ -148,7 +109,6 @@ defmodule MyCalculatorTool do
       "divide" -> params.a / params.b
     end
 
-    # Return structured output
     %{
       result: Float.round(result, precision),
       operation: params.operation,
@@ -163,7 +123,7 @@ defmodule MyCalculatorTool do
 end
 ```
 
-#### Example 2: Tool with Inline Parameter Definitions
+Adn you can define tools with inline input parameters: 
 
 ```elixir
 defmodule SimpleWeatherTool do
@@ -175,11 +135,6 @@ defmodule SimpleWeatherTool do
       location: [:string, required: true, min_length: 1],
       units: [:string, default: "celsius", enum: ["celsius", "fahrenheit"]],
       days: [:integer, default: 1, min: 1, max: 7]
-    ],
-    output: [
-      location: :string,
-      units: :string,
-      forecast: {:array, :map}
     ] do
 
     # Access context for API keys
@@ -203,46 +158,4 @@ defmodule SimpleWeatherTool do
 end
 ```
 
-### Agent Conversation Flow
-
-Dantex agents automatically handle the conversation loop when tools are involved:
-
-1. **User sends a message** via `Agent.run/2`
-2. **LLM responds** with either:
-   - A direct response (no tools) → Agent returns immediately
-   - A response with tool calls → Agent executes tools and continues
-3. **Tool execution** happens automatically, results are added to conversation
-4. **Loop continues** until LLM provides a final response without tool calls
-5. **Agent returns** the final response and complete message history
-
-This means you only need one `Agent.run/2` call regardless of how many tool calls the LLM makes.
-
-### Using Tools with Agents
-
-```elixir
-alias Dantex.{Agent, Message}
-
-# Create agent with tools and context
-agent = Agent.new(
-  provider: :openai,
-  model: "gpt-4o-mini",
-  messages: [Message.system("You are a helpful assistant.")],
-  tools: [MyCalculatorTool, SimpleWeatherTool],
-  context: %{
-    precision: 3,
-    weather_api_key: "your_api_key"
-  }
-)
-
-# Send a message that will trigger tool calls
-# Agent.run/2 automatically loops until the LLM provides a final response (no tool calls)
-{:ok, final_response, updated_agent} = Agent.run(agent, "Calculate 15.5 + 23.2 and get weather for Tokyo")
-
-# final_response contains the LLM's final message after all tool executions
-# updated_agent.messages contains the complete conversation history including:
-# - User message
-# - Assistant message with tool calls
-# - Tool result messages  
-# - Final assistant response
-```
 
