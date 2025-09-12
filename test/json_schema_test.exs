@@ -2,7 +2,6 @@ Code.compiler_options(ignore_module_conflict: true, docs: true, debug_info: true
 
 defmodule Dantex.JSONSchemaTest do
   use ExUnit.Case, async: true
-  import ExUnit.CaptureLog
 
   alias Dantex.JSONSchema
 

@@ -28,12 +28,14 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
     test "generates documentation for multiple tools" do
       # Create a simple test tool
       defmodule TestTool do
-        use Dantex.Tool.Basic
+        use Dantex.Tool
 
-        @tool_name "test_tool"
-        @tool_description "A test tool for testing"
-
-        def do_call(_params) do
+        tool :test_tool,
+          description: "A test tool for testing",
+          input: [],
+          output: [] do
+          _ = params
+          _ = context
           {:ok, "test result"}
         end
       end
@@ -51,12 +53,14 @@ defmodule Dantex.Tool.XMLAdapterBuildToolDocsTest do
     test "handles tools without schemas" do
       # Create a tool without schemas
       defmodule NoSchemasTool do
-        use Dantex.Tool.Basic
+        use Dantex.Tool
 
-        @tool_name "no_schemas_tool"
-        @tool_description "A tool without schemas"
-
-        def do_call(_params) do
+        tool :no_schemas_tool,
+          description: "A tool without schemas",
+          input: [],
+          output: [] do
+          _ = params
+          _ = context
           {:ok, "result"}
         end
       end

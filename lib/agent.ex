@@ -81,7 +81,7 @@ defmodule Dantex.Agent do
     * `:messages` - A list of prompt messages (required)
     * `:tools` - List of tool modules to use (default: [])
     * `:max_failed_retries` - The maximum number of failed retries for a tool call with the same arguments (optional, default: nil)
-    * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter for OpenAI provider, XMLAdapter for other providers)
+    * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter - uses OpenAI function calling spec)
     * `:context` - Map of context data passed to tools (default: %{})
 
   ## Example
@@ -147,7 +147,7 @@ defmodule Dantex.Agent do
   ## Example
 
       agent = Agent.new(provider: :openai, model: "gpt-4")
-      agent = Agent.set_tool_adapter(agent, Dantex.Tool.XMLAdapter)
+      agent = Agent.set_tool_adapter(agent, Dantex.Tool.OpenAIAdapter)
   """
   @spec set_tool_adapter(t(), module()) :: t()
   def set_tool_adapter(%__MODULE__{} = agent, adapter) do
@@ -196,9 +196,6 @@ defmodule Dantex.Agent do
     end
   end
 
-  @doc """
-  Processes the message based on whether it contains tool calls or not.
-  """
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
        when is_list(tool_calls) and length(tool_calls) > 0 do
@@ -211,9 +208,6 @@ defmodule Dantex.Agent do
     {:ok, last_msg, updated_agent}
   end
 
-  @doc """
-  Processes tool calls by checking retry limits and executing the tools.
-  """
   @spec process_tool_calls(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_tool_calls(agent, last_msg) do
     case check_max_failed_retries(agent, last_msg.tool_calls) do
@@ -231,9 +225,6 @@ defmodule Dantex.Agent do
     end
   end
 
-  @doc """
-  Executes tool calls and updates the agent with results.
-  """
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
     tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
@@ -255,9 +246,6 @@ defmodule Dantex.Agent do
     {:ok, last_msg, updated_agent}
   end
 
-  @doc """
-  Finds the tool call that matches the given tool call ID.
-  """
   @spec find_matching_tool_call(list(Message.tool_call()), String.t()) :: Message.tool_call() | nil
   defp find_matching_tool_call(tool_calls, tool_call_id) do
     Enum.find_value(tool_calls, fn tc ->
@@ -265,10 +253,6 @@ defmodule Dantex.Agent do
     end)
   end
 
-  @doc """
-  Checks if max_failed_retries is exceeded for any tool calls.
-  Returns :ok if we can proceed, or :error if max_failed_retries is exceeded.
-  """
   @spec check_max_failed_retries(t(), list(Message.tool_call())) ::
           {:ok} | {:error, term()}
   defp check_max_failed_retries(%__MODULE__{max_failed_retries: nil} = _agent, _tool_calls) do
@@ -312,9 +296,6 @@ defmodule Dantex.Agent do
     end)
   end
 
-  @doc """
-  Checks if max_failed_retries is exceeded for a tool call.
-  """
   @spec exceeded_failed_retries?(t(), String.t(), map()) :: boolean()
   defp exceeded_failed_retries?(%__MODULE__{} = agent, tool_name, arguments) do
     if agent.max_failed_retries == 0 do
@@ -344,10 +325,6 @@ defmodule Dantex.Agent do
     Model.chat_completion(agent.model, messages, agent.tools)
   end
 
-  @doc """
-  Executes tool calls using the provided tools with context.
-  Returns a list of tool result messages.
-  """
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [Message.t()]
   defp execute_tool_calls(tools, tool_calls, context) do
     tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]

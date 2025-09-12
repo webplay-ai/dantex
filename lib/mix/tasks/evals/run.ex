@@ -64,9 +64,6 @@ defmodule Mix.Tasks.Evals.Run do
     end
   end
 
-  @doc """
-  Coordinates the evaluation process by calling specialized functions in sequence.
-  """
   @spec run_evaluation(String.t(), String.t() | nil, String.t() | nil) :: no_return()
   defp run_evaluation(eval_name, provider, model) do
     IO.puts("Running evaluation: #{eval_name}")
@@ -84,10 +81,6 @@ defmodule Mix.Tasks.Evals.Run do
     execute_evaluation(eval_module, eval_name, cache_content, cache_path, provider, model)
   end
 
-  @doc """
-  Verifies that the evaluation file exists and returns its path.
-  Halts execution if the file doesn't exist.
-  """
   @spec verify_evaluation_exists(String.t()) :: String.t()
   defp verify_evaluation_exists(eval_name) do
     eval_dir = Path.join("evals", eval_name)
@@ -104,10 +97,6 @@ defmodule Mix.Tasks.Evals.Run do
     eval_file
   end
 
-  @doc """
-  Verifies that the cache file exists and returns its path.
-  Halts execution if the file doesn't exist.
-  """
   @spec verify_cache_exists() :: String.t()
   defp verify_cache_exists do
     cache_path = Path.join("evals", ".dantex-cache")
@@ -120,9 +109,6 @@ defmodule Mix.Tasks.Evals.Run do
     cache_path
   end
 
-  @doc """
-  Reads and parses the cache file.
-  """
   @spec read_cache(String.t()) :: map()
   defp read_cache(cache_path) do
     cache_path
@@ -130,10 +116,6 @@ defmodule Mix.Tasks.Evals.Run do
     |> Jason.decode!(keys: :atoms)
   end
 
-  @doc """
-  Checks if the evaluation has already been run.
-  Halts execution if it has.
-  """
   @spec check_if_already_run(map(), String.t()) :: :ok | no_return()
   defp check_if_already_run(cache_content, eval_name) do
     if Enum.any?(cache_content.evaluations, &(&1.name == eval_name)) do
@@ -144,9 +126,6 @@ defmodule Mix.Tasks.Evals.Run do
     :ok
   end
 
-  @doc """
-  Loads the evaluation module and returns its atom.
-  """
   @spec load_evaluation_module(String.t(), String.t()) :: atom()
   defp load_evaluation_module(eval_file, eval_name) do
     # Load the evaluation module
@@ -157,11 +136,8 @@ defmodule Mix.Tasks.Evals.Run do
     String.to_existing_atom(module_name)
   end
 
-  @doc """
-  Executes the evaluation and handles any errors.
-  """
   @spec execute_evaluation(atom(), String.t(), map(), String.t(), String.t() | nil, String.t() | nil) :: no_return()
-  defp execute_evaluation(eval_module, eval_name, cache_content, cache_path, provider, model) do
+  defp execute_evaluation(eval_module, eval_name, _cache_content, _cache_path, provider, model) do
     IO.puts("Executing evaluation...")
 
     # Create a results directory if it doesn't exist
@@ -188,26 +164,6 @@ defmodule Mix.Tasks.Evals.Run do
     end
   end
 
-  @doc """
-  Updates the cache with the evaluation results.
-  """
-  @spec update_cache(map(), String.t(), String.t(), any()) :: :ok
-  defp update_cache(cache_content, cache_path, eval_name, result) do
-    timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
-
-    updated_evaluations = [
-      %{name: eval_name, timestamp: timestamp, result: result}
-      | cache_content.evaluations
-    ]
-
-    updated_cache = %{cache_content | evaluations: updated_evaluations}
-
-    # Write the updated cache back to the file
-    updated_json = Jason.encode!(updated_cache, pretty: true)
-    File.write!(cache_path, updated_json)
-
-    :ok
-  end
 
   # Initialize ETS tables and other required state for the task
   defp start_goth_authentication do

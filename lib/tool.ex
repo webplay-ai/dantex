@@ -122,12 +122,8 @@ defmodule Dantex.Tool do
       # Register a before_compile hook
       @before_compile Dantex.Tool
 
-      # Default implementations (can be overridden by the tool macro)
-      def call(_params), do: {:error, :not_implemented}
-      def tool_name, do: nil
-      def tool_description, do: nil
-
-      defoverridable call: 1, tool_name: 0, tool_description: 0
+      # Default implementations will be provided by __before_compile__ callback
+      # if tool definitions exist, otherwise these defaults will be used
     end
   end
 
@@ -136,26 +132,27 @@ defmodule Dantex.Tool do
     tool_definitions = Module.get_attribute(env.module, :tool_definitions)
 
     if tool_definitions && length(tool_definitions) > 0 do
-      {_name, _description, _input_schema, _output_schema, block} = hd(tool_definitions)
-
+      {name, description, input_schema, output_schema, block} = hd(tool_definitions)
+      
       quote do
-        @impl true
-        def tool_name, do: @tool_name
+        def tool_name do
+          unquote(Atom.to_string(name))
+        end
 
-        @impl true
-        def tool_description, do: @tool_description
+        def tool_description do
+          unquote(description)
+        end
 
         # Define functions to access the schemas
         def __input_schema__ do
-          @input_schema
+          unquote(input_schema)
         end
 
         def __output_schema__ do
-          @output_schema
+          unquote(output_schema)
         end
 
         # Generate the call function that wraps the tool logic
-        @impl true
         def call(params) do
           with {:ok, validated_params} <- Validation.validate_input(__MODULE__, params) do
             try do
@@ -184,6 +181,9 @@ defmodule Dantex.Tool do
     else
       # No tool definitions, use defaults
       quote do
+        def call(_params), do: {:error, :not_implemented}
+        def tool_name, do: nil
+        def tool_description, do: nil
         def __input_schema__, do: nil
         def __output_schema__, do: nil
       end
@@ -323,13 +323,22 @@ defmodule Dantex.Tool do
         build_field_validations(field_name, opts)
       end)
 
-    quote do
-      struct
-      |> cast(params, unquote(all_fields))
-      |> validate_required(unquote(required_fields))
-      |> then(fn changeset ->
-        (unquote_splicing(validations))
-      end)
+    case validations do
+      [] ->
+        quote do
+          struct
+          |> cast(params, unquote(all_fields))
+          |> validate_required(unquote(required_fields))
+        end
+      _ ->
+        quote do
+          struct
+          |> cast(params, unquote(all_fields))
+          |> validate_required(unquote(required_fields))
+          |> then(fn changeset ->
+            unquote_splicing(validations ++ [quote(do: changeset)])
+          end)
+        end
     end
   end
 
@@ -396,25 +405,18 @@ defmodule Dantex.Tool do
         validations
       end
 
-    validations =
-      if opts[:max] do
-        [
-          quote(
-            do:
-              validate_number(changeset, unquote(field_name),
-                less_than_or_equal_to: unquote(opts[:max])
-              )
-          )
-          | validations
-        ]
-      else
-        validations
-      end
-
-    # Return changeset if no validations, otherwise pipe through validations
-    case validations do
-      [] -> [quote(do: changeset)]
-      _ -> validations ++ [quote(do: changeset)]
+    if opts[:max] do
+      [
+        quote(
+          do:
+            validate_number(changeset, unquote(field_name),
+              less_than_or_equal_to: unquote(opts[:max])
+            )
+        )
+        | validations
+      ]
+    else
+      validations
     end
   end
 

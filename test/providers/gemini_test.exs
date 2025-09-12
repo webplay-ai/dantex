@@ -1,8 +1,5 @@
 defmodule Dantex.Providers.GeminiTest do
   use ExUnit.Case
-  alias Dantex.Providers.Gemini
-  alias Dantex.Message
-  alias Dantex.Tool
 
   @moduledoc """
   Integration specs for Gemini provider regarding tool calling functionality.

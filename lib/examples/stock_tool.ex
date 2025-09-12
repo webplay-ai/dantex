@@ -42,7 +42,7 @@ defmodule Dantex.Examples.StockTool do
     output: StockOutputSchema do
 
     # get api key from context - or something else
-    api_key = context[:api_key]
+    _api_key = context[:api_key]
     
     # In a real implementation, you would use the API key and make an API call
     # For now, return mock data based on the input

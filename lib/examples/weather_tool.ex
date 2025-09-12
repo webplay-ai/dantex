@@ -2,15 +2,17 @@ defmodule Dantex.Examples.WeatherTool do
   @moduledoc """
   Example tool that demonstrates the use of Ecto schemas for input and output validation.
   """
-  use Dantex.Tool.Basic
+  use Dantex.Tool
 
-  @tool_name "get_weather"
-  @tool_description "Get the weather forecast for a location"
-  @input_schema Dantex.Examples.WeatherInputSchema
-  @output_schema Dantex.Examples.WeatherOutputSchema
+  tool :get_weather,
+    description: "Get the weather forecast for a location",
+    input: Dantex.Examples.WeatherInputSchema,
+    output: Dantex.Examples.WeatherOutputSchema do
 
-  def do_call(params) do
     # In a real implementation, this would call a weather API
+    # Access context for API keys, user preferences, etc.
+    _api_key = context[:weather_api_key] || "demo_key"
+    
     # For this example, we'll just return mock data
     forecast =
       for day <- 1..params.days do
@@ -21,14 +23,13 @@ defmodule Dantex.Examples.WeatherTool do
         }
       end
 
-    result = %{
+    # Return the result (no need to wrap in {:ok, result} - the DSL handles that)
+    %{
       location: params.location,
       current_temp: 22.5,
       conditions: "Sunny",
       forecast: forecast
     }
-
-    {:ok, result}
   end
 
 end

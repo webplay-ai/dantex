@@ -1,6 +1,5 @@
 defmodule Dantex.Tool.ToolAdapter do
   alias Dantex.Message
-  alias Dantex.Tool
 
   @type t :: module()
 

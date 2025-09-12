@@ -29,9 +29,10 @@ be found at <https://hexdocs.pm/dantex>.
 ## Features
 
 - Support for Ollama, OpenAI and Gemini
-- Tool calling
-- Define tool calls using XML using the Dantex.Tool.XMLAdapter
-- Ecto schema validations for tool call input parameters and tool outputs 
+- Tool calling with modern DSL syntax
+- Flexible tool definitions using Ecto schemas or inline parameter specifications
+- Automatic input/output validation and JSON Schema generation for OpenAI function calling
+- Context support for sharing data between tools and agents
 - Eval scaffolding using `mix evals.gen some_name_for_your_eval`
 - Run evals using on the same data set, using different models `mix evals.run some_name_for_your_eval --provider ollama --model gemma3:4b`
 
@@ -79,6 +80,140 @@ config :dantex, :providers,
 | OpenAI | o1-mini-2024-09-12 |
 | OpenAI | o1-2024-12-17 |
 | OpenAI | gpt-4.5-preview-2025-02-27 |
+
+## Usage
+
+### Creating Tools with the New DSL
+
+Dantex provides a modern DSL for defining tools with automatic validation and context support.
+
+#### Example 1: Tool with External Ecto Schemas
+
+```elixir
+defmodule CalculatorInputSchema do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  @primary_key false
+  embedded_schema do
+    field :operation, :string
+    field :a, :float
+    field :b, :float
+  end
+
+  def changeset(struct, params) do
+    struct
+    |> cast(params, [:operation, :a, :b])
+    |> validate_required([:operation, :a, :b])
+    |> validate_inclusion(:operation, ["add", "subtract", "multiply", "divide"])
+  end
+end
+
+defmodule CalculatorOutputSchema do
+  use Ecto.Schema
+
+  @primary_key false
+  embedded_schema do
+    field :result, :float
+    field :operation, :string
+    field :expression, :string
+  end
+end
+
+defmodule MyCalculatorTool do
+  use Dantex.Tool
+
+  tool :calculate,
+    description: "Perform mathematical operations",
+    input: CalculatorInputSchema,
+    output: CalculatorOutputSchema do
+
+    # Access context if needed
+    precision = Map.get(context, :precision, 2)
+    
+    # Perform calculation
+    result = case params.operation do
+      "add" -> params.a + params.b
+      "subtract" -> params.a - params.b
+      "multiply" -> params.a * params.b
+      "divide" -> params.a / params.b
+    end
+
+    # Return structured output
+    %{
+      result: Float.round(result, precision),
+      operation: params.operation,
+      expression: "#{params.a} #{get_operator(params.operation)} #{params.b}"
+    }
+  end
+
+  defp get_operator("add"), do: "+"
+  defp get_operator("subtract"), do: "-"
+  defp get_operator("multiply"), do: "*"
+  defp get_operator("divide"), do: "/"
+end
+```
+
+#### Example 2: Tool with Inline Parameter Definitions
+
+```elixir
+defmodule SimpleWeatherTool do
+  use Dantex.Tool
+
+  tool :get_weather,
+    description: "Get weather information",
+    input: [
+      location: [:string, required: true, min_length: 1],
+      units: [:string, default: "celsius", enum: ["celsius", "fahrenheit"]],
+      days: [:integer, default: 1, min: 1, max: 7]
+    ],
+    output: [
+      location: :string,
+      units: :string,
+      forecast: {:array, :map}
+    ] do
+
+    # Access context for API keys
+    api_key = context[:weather_api_key] || "demo_key"
+    
+    # Mock weather data
+    forecast = for day <- 1..params.days do
+      %{
+        day: day,
+        temp: 20.0 + (day * 0.5),
+        conditions: Enum.at(["Sunny", "Cloudy", "Rainy"], rem(day - 1, 3))
+      }
+    end
+    
+    %{
+      location: params.location,
+      units: params.units,
+      forecast: forecast
+    }
+  end
+end
+```
+
+### Using Tools with Agents
+
+```elixir
+alias Dantex.{Agent, Message}
+
+# Create agent with tools and context
+agent = Agent.new(
+  provider: :openai,
+  model: "gpt-4o-mini",
+  messages: [Message.system("You are a helpful assistant.")],
+  tools: [MyCalculatorTool, SimpleWeatherTool],
+  context: %{
+    precision: 3,
+    weather_api_key: "your_api_key"
+  }
+)
+
+# Send a message that will trigger tool calls
+{:ok, agent} = Agent.run(agent, "Calculate 15.5 + 23.2 and get weather for Tokyo")
+```
 
 ## Todo
 

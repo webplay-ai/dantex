@@ -1,7 +1,7 @@
 defmodule Dantex.Tool.XMLAdapterTest do
   use ExUnit.Case
 
-  alias Dantex.{Message, Tool}
+  alias Dantex.Message
   alias Dantex.Tool.XMLAdapter
 
   describe "extract_tool_calls/1" do

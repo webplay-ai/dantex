@@ -1,8 +1,5 @@
 defmodule Dantex.Providers.OllamaTest do
   use ExUnit.Case
-  alias Dantex.Providers.Ollama
-  alias Dantex.Message
-  alias Dantex.Tool
 
   @moduledoc """
   Integration specs for Ollama provider regarding tool calling functionality.

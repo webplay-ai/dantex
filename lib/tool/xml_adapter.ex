@@ -97,10 +97,6 @@ defmodule Dantex.Tool.XMLAdapter do
     end
   end
 
-  @doc """
-  Extracts parameters from function content XML.
-  Ignores parameters that contain nested XML tags.
-  """
   @spec extract_parameters(String.t()) :: {:ok, map()} | {:error, String.t()}
   defp extract_parameters(function_content) do
     # Get all parameter matches
@@ -185,25 +181,29 @@ defmodule Dantex.Tool.XMLAdapter do
   defp build_input_doc(tool_name, schema) do
     fields = schema.__schema__(:fields)
 
-    params =
-      fields
-      |> Enum.map(fn field ->
-        type = schema.__schema__(:type, field)
-        description = format_type_description(type)
+    if Enum.empty?(fields) do
+      "<#{tool_name}>\n  <!-- No parameters required -->\n</#{tool_name}>"
+    else
+      params =
+        fields
+        |> Enum.map(fn field ->
+          type = schema.__schema__(:type, field)
+          description = format_type_description(type)
 
-        # Check if field has a default value
-        default_info =
-          if has_default?(schema, field) do
-            " (default: #{get_default_value(schema, field)})"
-          else
-            ""
-          end
+          # Check if field has a default value
+          default_info =
+            if has_default?(schema, field) do
+              " (default: #{get_default_value(schema, field)})"
+            else
+              ""
+            end
 
-        "  <#{field}>#{description}#{default_info}</#{field}>"
-      end)
-      |> Enum.join("\n")
+          "  <#{field}>#{description}#{default_info}</#{field}>"
+        end)
+        |> Enum.join("\n")
 
-    "<#{tool_name}>\n#{params}\n</#{tool_name}>"
+      "<#{tool_name}>\n#{params}\n</#{tool_name}>"
+    end
   end
 
   defp build_output_doc(nil), do: "<result>\n  <!-- No specific output format -->\n</result>"
@@ -211,17 +211,21 @@ defmodule Dantex.Tool.XMLAdapter do
   defp build_output_doc(schema) do
     fields = schema.__schema__(:fields)
 
-    params =
-      fields
-      |> Enum.map(fn field ->
-        type = schema.__schema__(:type, field)
-        description = format_type_description(type, true)
+    if Enum.empty?(fields) do
+      "<result>\n  <!-- No specific output format -->\n</result>"
+    else
+      params =
+        fields
+        |> Enum.map(fn field ->
+          type = schema.__schema__(:type, field)
+          description = format_type_description(type, true)
 
-        "  <#{field}>#{description}</#{field}>"
-      end)
-      |> Enum.join("\n")
+          "  <#{field}>#{description}</#{field}>"
+        end)
+        |> Enum.join("\n")
 
-    "<result>\n#{params}\n</result>"
+      "<result>\n#{params}\n</result>"
+    end
   end
 
   # Format type descriptions for documentation
