@@ -1,4 +1,10 @@
 defmodule Dantex.Providers.OpenAI do
+  @moduledoc """
+  OpenAI provider implementation for chat completions.
+  
+  Supports various OpenAI models including GPT-4, GPT-3.5, O1, and O3 series.
+  Handles authentication, tool calling, message formatting, and response parsing.
+  """
   @supported_models [
     "gpt-4o-2024-08-06",
     "gpt-4o-mini-2024-07-18",

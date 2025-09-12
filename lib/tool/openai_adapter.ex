@@ -1,4 +1,10 @@
 defmodule Dantex.Tool.OpenAIAdapter do
+  @moduledoc """
+  OpenAI-compatible tool adapter.
+  
+  This adapter is a pass-through implementation since OpenAI responses already
+  contain properly structured tool calls that don't require additional parsing.
+  """
   alias Dantex.{Message, Tool}
 
   @behaviour Dantex.Tool.ToolAdapter

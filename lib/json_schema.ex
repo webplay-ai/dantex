@@ -1,4 +1,10 @@
 defmodule Dantex.JSONSchema do
+  @moduledoc """
+  JSON Schema generation from Ecto schemas.
+  
+  Converts Ecto schema definitions into JSON Schema format for API documentation
+  and validation. Supports embedded schemas, associations, and various Ecto field types.
+  """
   require Logger
   defguardp is_ecto_schema(mod) when is_atom(mod)
   defguardp is_ecto_types(types) when is_map(types)

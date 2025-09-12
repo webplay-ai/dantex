@@ -1,4 +1,10 @@
 defmodule Dantex.Examples.WeatherInputSchema do
+  @moduledoc """
+  Input schema for weather tool demonstration.
+  
+  Defines the expected input structure for weather queries including location,
+  units (metric/imperial), and number of forecast days.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

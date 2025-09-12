@@ -1,4 +1,10 @@
 defmodule Dantex.Message do
+  @moduledoc """
+  Message structure for AI conversations.
+  
+  Defines types and constructor functions for different message roles (system, user, assistant, tool)
+  and handles tool calls and tool results in the conversation flow.
+  """
   @type tool_call_function :: %{
           name: String.t(),
           arguments: String.t() # JSON-encoded string

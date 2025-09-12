@@ -1,4 +1,10 @@
 defmodule Dantex.Provider do
+  @moduledoc """
+  Behaviour for AI provider implementations.
+  
+  Defines the interface for different AI providers (OpenAI, Gemini, Ollama) to implement
+  chat completions with consistent message and tool handling across providers.
+  """
   alias Dantex.Message
   alias Dantex.Tool
 

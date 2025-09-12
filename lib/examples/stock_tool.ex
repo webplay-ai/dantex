@@ -1,4 +1,10 @@
 defmodule StockInputSchema do
+  @moduledoc """
+  Input schema for stock price queries.
+  
+  Defines the required input structure for retrieving stock prices,
+  including company symbol and date parameters.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -17,6 +23,12 @@ end
 
 
 defmodule Dantex.Examples.StockTool do
+  @moduledoc """
+  Example stock price tool implementation.
+  
+  Demonstrates tool definition using the DSL syntax with input validation,
+  context access, and structured output. Returns mock stock price data.
+  """
   use Dantex.Tool
 
   tool :get_stock_price,

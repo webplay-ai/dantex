@@ -296,7 +296,7 @@ defmodule Dantex.Eval do
   def generate_table_rows(test_cases) do
     test_cases
     |> Enum.with_index(1)
-    |> Enum.map(fn {test_case, index} ->
+    |> Enum.map_join("\n", fn {test_case, index} ->
       input_text = format_messages(test_case.input)
       expected = test_case.expected_output || "N/A"
       actual = test_case.actual_output || "N/A"
@@ -320,19 +320,17 @@ defmodule Dantex.Eval do
       </tr>
       """
     end)
-    |> Enum.join("\n")
   end
 
   # Helper function to format messages for display
   # @doc false - Exposed for testing
   def format_messages(messages) do
     messages
-    |> Enum.map(fn msg ->
+    |> Enum.map_join("\n\n", fn msg ->
       role = Map.get(msg, :role, "unknown")
       content = Map.get(msg, :content, "")
       "#{role}: #{content}"
     end)
-    |> Enum.join("\n\n")
   end
 
   # Helper function to escape HTML special characters

@@ -153,8 +153,7 @@ defmodule Dantex.Providers.Gemini do
         text =
           parts
           |> Enum.filter(fn part -> Map.has_key?(part, "text") end)
-          |> Enum.map(fn part -> Map.get(part, "text", "") end)
-          |> Enum.join("")
+          |> Enum.map_join("", fn part -> Map.get(part, "text", "") end)
 
         if Enum.empty?(function_calls) do
           # Regular message without function calls
@@ -210,8 +209,7 @@ defmodule Dantex.Providers.Gemini do
         text =
           parts
           |> Enum.filter(fn part -> Map.has_key?(part, "text") end)
-          |> Enum.map(fn part -> Map.get(part, "text", "") end)
-          |> Enum.join("")
+          |> Enum.map_join("", fn part -> Map.get(part, "text", "") end)
 
         if Enum.empty?(function_calls) do
           # Regular message without function calls

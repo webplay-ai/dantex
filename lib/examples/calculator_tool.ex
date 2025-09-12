@@ -1,4 +1,10 @@
 defmodule CalculatorInputSchema do
+  @moduledoc """
+  Input schema for calculator operations.
+  
+  Defines the expected input structure for basic mathematical operations
+  including operation type and operand values.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

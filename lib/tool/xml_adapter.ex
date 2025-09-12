@@ -1,4 +1,13 @@
 defmodule Dantex.Tool.XMLAdapter do
+  @moduledoc """
+  XML-based tool adapter for parsing function calls from XML-formatted responses.
+  
+  This adapter handles extracting tool calls from XML content in the format:
+  `<function_calls><tool_name><param>value</param></tool_name></function_calls>`
+  
+  It validates XML structure, prevents malformed or duplicate parameters,
+  and converts the parsed content to the standard OpenAI tool call format.
+  """
   alias Dantex.{Message, Tool}
 
   @behaviour Dantex.Tool.ToolAdapter
@@ -146,9 +155,7 @@ defmodule Dantex.Tool.XMLAdapter do
   """
   @spec build_tool_docs(list(Tool.t())) :: String.t()
   def build_tool_docs(tools) do
-    tools
-    |> Enum.map(&build_tool_doc/1)
-    |> Enum.join("\n\n")
+    Enum.map_join(tools, "\n\n", &build_tool_doc/1)
   end
 
   defp build_tool_doc(tool) do
@@ -178,8 +185,7 @@ defmodule Dantex.Tool.XMLAdapter do
       "<#{tool_name}>\n  <!-- No parameters required -->\n</#{tool_name}>"
     else
       params =
-        fields
-        |> Enum.map(fn field ->
+        Enum.map_join(fields, "\n", fn field ->
           type = schema.__schema__(:type, field)
           description = format_type_description(type)
 
@@ -193,7 +199,6 @@ defmodule Dantex.Tool.XMLAdapter do
 
           "  <#{field}>#{description}#{default_info}</#{field}>"
         end)
-        |> Enum.join("\n")
 
       "<#{tool_name}>\n#{params}\n</#{tool_name}>"
     end
