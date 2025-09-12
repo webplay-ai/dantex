@@ -48,6 +48,9 @@ config :dantex, :providers,
   gemini: %{
     api_key: System.get_env("GEMINI_API_KEY")
   },
+  anthropic: %{
+    api_key: System.get_env("ANTHROPIC_API_KEY")
+  },
   ollama: %{
     api_base: System.get_env("OLLAMA_API_BASE")
   }
@@ -79,6 +82,12 @@ config :dantex, :providers,
 | OpenAI | o3-mini-2025-01-31 |
 | OpenAI | o1-mini-2024-09-12 |
 | OpenAI | o1-2024-12-17 |
+| Anthropic | claude-3-5-sonnet-20241022 |
+| Anthropic | claude-3-5-sonnet-20240620 |
+| Anthropic | claude-3-5-haiku-20241022 |
+| Anthropic | claude-3-opus-20240229 |
+| Anthropic | claude-3-sonnet-20240229 |
+| Anthropic | claude-3-haiku-20240307 |
 | OpenAI | gpt-4.5-preview-2025-02-27 |
 
 ## Usage
@@ -194,6 +203,20 @@ defmodule SimpleWeatherTool do
 end
 ```
 
+### Agent Conversation Flow
+
+Dantex agents automatically handle the conversation loop when tools are involved:
+
+1. **User sends a message** via `Agent.run/2`
+2. **LLM responds** with either:
+   - A direct response (no tools) → Agent returns immediately
+   - A response with tool calls → Agent executes tools and continues
+3. **Tool execution** happens automatically, results are added to conversation
+4. **Loop continues** until LLM provides a final response without tool calls
+5. **Agent returns** the final response and complete message history
+
+This means you only need one `Agent.run/2` call regardless of how many tool calls the LLM makes.
+
 ### Using Tools with Agents
 
 ```elixir
@@ -212,15 +235,14 @@ agent = Agent.new(
 )
 
 # Send a message that will trigger tool calls
-{:ok, agent} = Agent.run(agent, "Calculate 15.5 + 23.2 and get weather for Tokyo")
+# Agent.run/2 automatically loops until the LLM provides a final response (no tool calls)
+{:ok, final_response, updated_agent} = Agent.run(agent, "Calculate 15.5 + 23.2 and get weather for Tokyo")
+
+# final_response contains the LLM's final message after all tool executions
+# updated_agent.messages contains the complete conversation history including:
+# - User message
+# - Assistant message with tool calls
+# - Tool result messages  
+# - Final assistant response
 ```
 
-## Todo
-
-- [ ] extend API with more functions to work with context windows - getMessageByIndex, getResponseByIndex, getAllPrompts, getAllResponses, getAllMessages
-- [ ] extend API to template prompts template prompts, renderPrompt
-- [ ] extend API to build switch statements based on llm outputs, handleToolCall
-- [ ] build in mechanism to kill agent after X number of tokens or X number of messages. default off.
-- [ ] return actual tokens used in message? we need to add this to eval.run
-- [ ] add extensive docs
-- [ ] add more docs/examples and test for ecto based schema validations

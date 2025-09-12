@@ -10,9 +10,11 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 
 ### Agent System (`lib/agent.ex`)
 - Agents are containers that group models, messages, and tooling
+- Automatic conversation looping - `Agent.run/2` continues until LLM provides final response (no tool calls)
 - Support for tool calling with retry limits and tool history tracking
 - Provider abstraction with support for OpenAI, Gemini, and Ollama
-- Tool adapters for different provider formats (OpenAI format vs XML format) - this is legacy now, we will focus on OpenAI function calling spec 
+- Tool adapters for different provider formats (OpenAI format vs XML format) - this is legacy now, we will focus on OpenAI function calling spec
+- Built-in safeguard against infinite loops (50 iteration limit) 
 
 ### Tool System (`lib/tool.ex`)
 - Modern DSL-based tool definitions with inline or external Ecto schema support
@@ -27,7 +29,7 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 - Test case management with expected vs actual output comparison
 
 ### Provider System (`lib/providers/`)
-- Unified interface across OpenAI, Gemini, and Ollama
+- Unified interface across OpenAI, Gemini, Anthropic, and Ollama
 - Model configuration and chat completion handling
 - Provider-specific authentication and API handling
 
@@ -78,6 +80,7 @@ Configure providers in `config/config.exs`:
 config :dantex, :providers,
   openai: %{api_key: System.get_env("OPENAI_API_KEY")},
   gemini: %{api_key: System.get_env("GEMINI_API_KEY")},
+  anthropic: %{api_key: System.get_env("ANTHROPIC_API_KEY")},
   ollama: %{api_base: System.get_env("OLLAMA_API_BASE")}
 ```
 
@@ -94,4 +97,4 @@ config :dantex, :providers,
 
 ## Supported Models
 
-The framework supports multiple providers and models. See README.md for the complete list of supported models across Ollama, Gemini, and OpenAI providers.
+The framework supports multiple providers and models. See README.md for the complete list of supported models across Ollama, Gemini, Anthropic, and OpenAI providers.

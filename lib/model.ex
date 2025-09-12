@@ -53,6 +53,7 @@ defmodule Dantex.Model do
       :openai -> Dantex.Providers.OpenAI
       :ollama -> Dantex.Providers.Ollama
       :gemini -> Dantex.Providers.Gemini
+      :anthropic -> Dantex.Providers.Anthropic
       _ -> raise "Unknown provider: #{provider_key}"
     end
   end
