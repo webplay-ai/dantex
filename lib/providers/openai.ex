@@ -118,25 +118,40 @@ defmodule Dantex.Providers.OpenAI do
   defp parse_response(%{"choices" => choices, "usage" => usage}) do
     messages =
       choices
-      |> Enum.map(fn
-        %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}} ->
-          # Convert tool_calls to our structured type
-          formatted_tool_calls =
-            Enum.map(tool_calls, fn tool_call ->
-              %{
-                id: tool_call["id"],
-                type: tool_call["type"],
-                function: %{
-                  name: tool_call["function"]["name"],
-                  arguments: tool_call["function"]["arguments"]
+      |> Enum.map(fn choice ->
+        case choice do
+          %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}} 
+          when is_list(tool_calls) ->
+            # Convert tool_calls to our structured type - only if it's a proper list
+            formatted_tool_calls =
+              Enum.map(tool_calls, fn tool_call ->
+                %{
+                  id: tool_call["id"],
+                  type: tool_call["type"],
+                  function: %{
+                    name: tool_call["function"]["name"],
+                    arguments: tool_call["function"]["arguments"]
+                  }
                 }
-              }
-            end)
+              end)
 
-          %Message{role: role, content: content, tool_calls: formatted_tool_calls}
+            %Message{role: role, content: content, tool_calls: formatted_tool_calls}
 
-        %{"message" => %{"role" => role, "content" => content}} ->
-          %Message{role: role, content: content}
+          %{"message" => %{"role" => role, "content" => content, "tool_calls" => invalid_tool_calls}} ->
+            # Handle case where tool_calls field exists but contains invalid data
+            require Logger
+            Logger.warning("OpenAI returned invalid tool_calls format: #{inspect(invalid_tool_calls)}")
+            %Message{role: role, content: content, tool_calls: nil}
+
+          %{"message" => %{"role" => role, "content" => content}} ->
+            # Normal text response without tool_calls
+            %Message{role: role, content: content, tool_calls: nil}
+
+          unexpected ->
+            require Logger
+            Logger.error("Unexpected OpenAI message format: #{inspect(unexpected)}")
+            %Message{role: "assistant", content: "Error parsing response", tool_calls: nil}
+        end
       end)
 
     # Transform OpenAI usage to match our Provider.usage type

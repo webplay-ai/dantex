@@ -349,14 +349,6 @@ defmodule Dantex.Agent do
   end
   
   defp has_tool_calls?(_), do: false
-  @spec is_valid_tool_call?(any()) :: boolean()
-  defp is_valid_tool_call?(tool_call) when is_map(tool_call) do
-    Map.has_key?(tool_call, :id) and 
-    Map.has_key?(tool_call, :function) and
-    is_map(tool_call.function) and
-    Map.has_key?(tool_call.function, :name)
-  end
-  defp is_valid_tool_call?(_), do: false
 
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
@@ -492,19 +484,8 @@ defmodule Dantex.Agent do
 
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [Message.t()]
   defp execute_tool_calls(tools, tool_calls, context) do
-    # Validate and filter tool_calls to prevent crashes
-    valid_tool_calls = case tool_calls do
-      tool_calls when is_list(tool_calls) -> 
-        Enum.filter(tool_calls, &is_valid_tool_call?/1)
-      tool_call when is_map(tool_call) -> 
-        if is_valid_tool_call?(tool_call), do: [tool_call], else: []
-      invalid -> 
-        require Logger
-        Logger.warning("Invalid tool_calls received: #{inspect(invalid)}")
-        []
-    end
-    
-    valid_tool_calls
+    tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]
+    tool_calls
     |> Enum.map(fn tool_call ->
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
