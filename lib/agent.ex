@@ -338,7 +338,8 @@ defmodule Dantex.Agent do
         arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
         # Execute the tool with decoded arguments and context
-        params_with_context = Map.put(arguments, :context, context)
+        # Use string key to match the JSON-decoded arguments format
+        params_with_context = Map.put(arguments, "context", context)
         case tool.call(params_with_context) do
           {:ok, result} ->
             Message.tool_result(Map.get(tool_call, :id), result)

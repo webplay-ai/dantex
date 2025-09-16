@@ -146,11 +146,12 @@ defmodule Dantex.Tool do
 
         # Generate the call function that wraps the tool logic
         def call(params) do
-          with {:ok, validated_params} <- Validation.validate_input(__MODULE__, params) do
+          # Extract context before validation since it's not part of the tool schema
+          context = Map.get(params, "context", %{})
+          tool_params = Map.delete(params, "context")
+          
+          with {:ok, validated_params} <- Validation.validate_input(__MODULE__, tool_params) do
             try do
-              # Execute the tool block with context support
-              context = Map.get(params, :context, %{})
-
               # Make params and context available in the block
               result =
                 (fn ->
