@@ -383,15 +383,18 @@ defmodule Dantex.Agent do
 
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
-    tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
+    tool_execution_results = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
+    
+    # Extract messages and original results
+    {tool_result_messages, original_results} = Enum.unzip(tool_execution_results)
+    
     # Only add tool result messages since assistant message was already added
     updated_messages = agent.messages ++ tool_result_messages
 
     tool_results =
-      tool_result_messages
-      |> Enum.map(fn message ->
-        tool_call = find_matching_tool_call(last_msg.tool_calls, message.tool_call_id)
-        {tool_call, message, message.content}
+      Enum.zip([last_msg.tool_calls, tool_result_messages, original_results])
+      |> Enum.map(fn {tool_call, message, original_result} ->
+        {tool_call, message, original_result}
       end)
 
     updated_tool_history = update_tool_history(agent.tool_history, tool_results)
@@ -403,12 +406,6 @@ defmodule Dantex.Agent do
     {:ok, last_msg, updated_agent}
   end
 
-  @spec find_matching_tool_call(list(Message.tool_call()), String.t()) :: Message.tool_call() | nil
-  defp find_matching_tool_call(tool_calls, tool_call_id) do
-    Enum.find_value(tool_calls, fn tc ->
-      if tc.id == tool_call_id, do: tc, else: nil
-    end)
-  end
 
   @spec check_max_failed_retries(t(), list(Message.tool_call())) ::
           {:ok} | {:error, term()}
@@ -460,7 +457,10 @@ defmodule Dantex.Agent do
     else
       agent.tool_history
       |> Enum.filter(fn entry ->
-        entry.tool_name == tool_name && entry.input_parameters == arguments && is_map_key(entry.output, :error)
+        entry.tool_name == tool_name && 
+        entry.input_parameters == arguments && 
+        is_map(entry.output) &&
+        Map.has_key?(entry.output, :error)
       end)
       |> length() >= agent.max_failed_retries
     end
@@ -482,13 +482,14 @@ defmodule Dantex.Agent do
     Model.chat_completion(agent.model, messages, agent.tools)
   end
 
-  @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [Message.t()]
+  @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [{Message.t(), any()}]
   defp execute_tool_calls(tools, tool_calls, context) do
     tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]
     tool_calls
     |> Enum.map(fn tool_call ->
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
+      
       # Emit telemetry event for tool execution start
       :telemetry.execute([:dantex, :agent, :tool_call_start], %{}, %{
         agent_id: context.id,
@@ -498,8 +499,9 @@ defmodule Dantex.Agent do
         timestamp: DateTime.utc_now()
       })
       
-      result = if tool == nil do
-        Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
+      {result_message, original_result} = if tool == nil do
+        error_result = %{error: "Tool not found: #{tool_name}"}
+        {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
       else
         arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
@@ -508,10 +510,11 @@ defmodule Dantex.Agent do
         params_with_context = Map.put(arguments, "context", context)
         case tool.call(params_with_context) do
           {:ok, tool_result} ->
-            Message.tool_result(Map.get(tool_call, :id), tool_result)
+            {Message.tool_result(Map.get(tool_call, :id), tool_result), tool_result}
 
           {:error, error} ->
-            Message.tool_result(Map.get(tool_call, :id), %{error: error})
+            error_result = %{error: error}
+            {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
         end
       end
       
@@ -520,12 +523,12 @@ defmodule Dantex.Agent do
         agent_id: context.id,
         tool_name: tool_name,
         tool_call_id: Map.get(tool_call, :id),
-        result: result.content,
-        success: not Map.has_key?(result.content, :error),
+        result: result_message.content,
+        success: not (is_map(original_result) and Map.has_key?(original_result, :error)),
         timestamp: DateTime.utc_now()
       })
       
-      result
+      {result_message, original_result}
     end)
   end
 
