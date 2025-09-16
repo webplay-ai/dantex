@@ -183,23 +183,57 @@ defmodule Dantex.Agent do
      a. Check if we exceed the max_failed_retries limit. If not execute using the tool adapter, otherwise return with an Dantex.Message containing an error
      b. Add the tool call results to the agent.messages
      c. Update the tool history
+     d. Continue the conversation loop until no more tool calls
   5. Return with updated agent state, history and messages
+
+  The conversation loop continues until the LLM provides a final response with no tool calls,
+  with a maximum of 50 iterations to prevent infinite loops.
   """
   @spec run(t(), Message.t() | String.t()) :: {:ok, Message.t(), t()} | {:error, term()}
   def run(%__MODULE__{} = agent, message) do
-    with {:ok, messages} <- build_messages(agent, message),
-         {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
-         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      process_message(agent, processed_msg)
+    with {:ok, messages} <- build_messages(agent, message) do
+      run_conversation_loop(agent, messages, 0)
     else
       {:error, reason} -> {:error, reason}
     end
   end
 
+  @max_iterations 50
+
+  @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) :: {:ok, Message.t(), t()} | {:error, term()}
+  defp run_conversation_loop(_agent, _messages, iteration) when iteration >= @max_iterations do
+    {:error, "Maximum iterations (#{@max_iterations}) reached. Possible infinite loop detected."}
+  end
+
+  defp run_conversation_loop(agent, messages, iteration) do
+    with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
+         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
+      {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
+      
+      # Check if the message has tool calls - if so, continue the loop
+      if has_tool_calls?(final_msg) do
+        run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
+      else
+        # No tool calls, return the final result
+        {:ok, final_msg, updated_agent}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec has_tool_calls?(Message.t()) :: boolean()
+  defp has_tool_calls?(%Message{tool_calls: tool_calls}) when is_list(tool_calls) and length(tool_calls) > 0 do
+    true
+  end
+  
+  defp has_tool_calls?(_), do: false
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
        when is_list(tool_calls) and length(tool_calls) > 0 do
-    process_tool_calls(agent, last_msg)
+    # Add the assistant message with tool calls to the agent messages first
+    updated_agent = %{agent | messages: agent.messages ++ [last_msg]}
+    process_tool_calls(updated_agent, last_msg)
   end
 
   defp process_message(agent, last_msg) do
@@ -228,6 +262,7 @@ defmodule Dantex.Agent do
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
     tool_result_messages = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
+    # Only add tool result messages since assistant message was already added
     updated_messages = agent.messages ++ tool_result_messages
 
     tool_results =
