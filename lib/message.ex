@@ -76,4 +76,22 @@ defmodule Dantex.Message do
       content: Jason.encode!(result)
     }
   end
+
+  @doc """
+  Converts a message to a telemetry-safe map.
+  
+  Returns a plain map that can be safely used with Access behavior and
+  doesn't expose internal struct implementation details.
+  """
+  @spec to_telemetry(t()) :: map()
+  def to_telemetry(%__MODULE__{} = message) do
+    %{
+      role: message.role,
+      content: message.content,
+      has_tool_calls: not is_nil(message.tool_calls) and length(message.tool_calls) > 0,
+      tool_calls_count: if(message.tool_calls, do: length(message.tool_calls), else: 0),
+      tool_calls: message.tool_calls,
+      tool_call_id: message.tool_call_id
+    }
+  end
 end

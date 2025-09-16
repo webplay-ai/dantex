@@ -18,8 +18,14 @@ defmodule Dantex.Agent do
   ```elixir
   %{
     agent_id: String.t(),
-    message: Message.t(),
-    has_tool_calls: boolean(),
+    message: %{
+      role: String.t(),
+      content: String.t() | nil,
+      has_tool_calls: boolean(),
+      tool_calls_count: integer(),
+      tool_calls: list() | nil,
+      tool_call_id: String.t() | nil
+    },
     timestamp: DateTime.t()
   }
   ```
@@ -32,7 +38,14 @@ defmodule Dantex.Agent do
   ```elixir
   %{
     agent_id: String.t(),
-    final_message: Message.t(),
+    final_message: %{
+      role: String.t(),
+      content: String.t() | nil,
+      has_tool_calls: boolean(),
+      tool_calls_count: integer(),
+      tool_calls: list() | nil,
+      tool_call_id: String.t() | nil
+    },
     total_iterations: integer(),
     timestamp: DateTime.t()
   }
@@ -305,8 +318,7 @@ defmodule Dantex.Agent do
       # Emit telemetry event for the processed message
       :telemetry.execute([:dantex, :agent, :message], %{iteration: iteration}, %{
         agent_id: agent.context.id,
-        message: processed_msg,
-        has_tool_calls: has_tool_calls?(processed_msg),
+        message: Message.to_telemetry(processed_msg),
         timestamp: DateTime.utc_now()
       })
       
@@ -319,7 +331,7 @@ defmodule Dantex.Agent do
         # Emit final response telemetry event
         :telemetry.execute([:dantex, :agent, :response], %{iteration: iteration}, %{
           agent_id: agent.context.id,
-          final_message: final_msg,
+          final_message: Message.to_telemetry(final_msg),
           total_iterations: iteration + 1,
           timestamp: DateTime.utc_now()
         })
