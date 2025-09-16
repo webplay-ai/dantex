@@ -306,6 +306,16 @@ defmodule Dantex.Agent do
 
   @max_iterations 50
 
+  # Centralized telemetry emission function
+  @spec emit_telemetry(String.t(), atom(), map(), map()) :: :ok
+  defp emit_telemetry(agent_id, event_name, measurements \\ %{}, metadata \\ %{}) do
+    full_metadata = Map.merge(metadata, %{
+      agent_id: agent_id,
+      timestamp: DateTime.utc_now()
+    })
+    
+    :telemetry.execute([:dantex, :agent, event_name], measurements, full_metadata)
+  end
   @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) :: {:ok, Message.t(), t()} | {:error, term()}
   defp run_conversation_loop(_agent, _messages, iteration) when iteration >= @max_iterations do
     {:error, "Maximum iterations (#{@max_iterations}) reached. Possible infinite loop detected."}
@@ -316,10 +326,8 @@ defmodule Dantex.Agent do
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
       
       # Emit telemetry event for the processed message
-      :telemetry.execute([:dantex, :agent, :message], %{iteration: iteration}, %{
-        agent_id: agent.context.id,
-        message: Message.to_telemetry(processed_msg),
-        timestamp: DateTime.utc_now()
+      emit_telemetry(agent.context.id, :message, %{iteration: iteration}, %{
+        message: Message.to_telemetry(processed_msg)
       })
       
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
@@ -329,11 +337,9 @@ defmodule Dantex.Agent do
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
       else
         # Emit final response telemetry event
-        :telemetry.execute([:dantex, :agent, :response], %{iteration: iteration}, %{
-          agent_id: agent.context.id,
+        emit_telemetry(agent.context.id, :response, %{iteration: iteration}, %{
           final_message: Message.to_telemetry(final_msg),
-          total_iterations: iteration + 1,
-          timestamp: DateTime.utc_now()
+          total_iterations: iteration + 1
         })
         
         {:ok, final_msg, updated_agent}
@@ -491,12 +497,10 @@ defmodule Dantex.Agent do
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
       
       # Emit telemetry event for tool execution start
-      :telemetry.execute([:dantex, :agent, :tool_call_start], %{}, %{
-        agent_id: context.id,
+      emit_telemetry(context.id, :tool_call_start, %{}, %{
         tool_name: tool_name,
         tool_call_id: Map.get(tool_call, :id),
-        arguments: Map.get(tool_call, :function) |> Map.get(:arguments),
-        timestamp: DateTime.utc_now()
+        arguments: Map.get(tool_call, :function) |> Map.get(:arguments)
       })
       
       {result_message, original_result} = if tool == nil do
@@ -519,13 +523,11 @@ defmodule Dantex.Agent do
       end
       
       # Emit telemetry event for tool execution completion
-      :telemetry.execute([:dantex, :agent, :tool_call_complete], %{}, %{
-        agent_id: context.id,
+      emit_telemetry(context.id, :tool_call_complete, %{}, %{
         tool_name: tool_name,
         tool_call_id: Map.get(tool_call, :id),
         result: result_message.content,
-        success: not (is_map(original_result) and Map.has_key?(original_result, :error)),
-        timestamp: DateTime.utc_now()
+        success: not (is_map(original_result) and Map.has_key?(original_result, :error))
       })
       
       {result_message, original_result}
