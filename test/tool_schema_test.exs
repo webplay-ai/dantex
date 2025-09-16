@@ -29,9 +29,10 @@ defmodule Dantex.ToolSchemaTest do
 
       # Parse the JSON to verify structure
       parsed = Jason.decode!(json_schema)
-      assert parsed["name"] == "get_weather"
-      assert parsed["description"] == "Get the weather forecast for a location"
-      assert parsed["parameters"]["type"] == "object"
+      assert parsed["type"] == "function"
+      assert parsed["function"]["name"] == "get_weather"
+      assert parsed["function"]["description"] == "Get the weather forecast for a location"
+      assert parsed["function"]["parameters"]["type"] == "object"
     end
 
     test "parses and validates JSON input" do

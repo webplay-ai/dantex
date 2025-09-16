@@ -55,12 +55,15 @@ defmodule Dantex.Tool.JSONSchema do
 
     # Build the complete tool schema
     %{
-      "name" => name,
-      "description" => description,
-      "parameters" => %{
-        "type" => "object",
-        "properties" => input_properties,
-        "required" => required_fields
+      "type" => "function",
+      "function" => %{
+        "name" => name,
+        "description" => description,
+        "parameters" => %{
+          "type" => "object",
+          "properties" => input_properties,
+          "required" => required_fields
+        }
       }
     }
     |> Jason.encode!()
