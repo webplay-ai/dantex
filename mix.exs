@@ -28,6 +28,7 @@ defmodule Dantex.MixProject do
       {:httpoison, "~> 2.0"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:telemetry, "~> 1.0"},
 
       # Gemini
       {:goth, "~> 1.4"},

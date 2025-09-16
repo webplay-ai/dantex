@@ -5,6 +5,94 @@ defmodule Dantex.Agent do
   They can track the history of tool calls and enforce limits on the number of failed
   retries for a given tool and set of arguments.
 
+  ## Telemetry Events
+
+  This module emits several telemetry events that can be used for observability,
+  logging, debugging, and real-time UI updates:
+
+  ### `[:dantex, :agent, :message]`
+  Emitted for each message processed in the conversation loop.
+  
+  **Measurements:** `%{iteration: integer()}`
+  **Metadata:** 
+  ```elixir
+  %{
+    agent_id: String.t(),
+    message: Message.t(),
+    has_tool_calls: boolean(),
+    timestamp: DateTime.t()
+  }
+  ```
+
+  ### `[:dantex, :agent, :response]`
+  Emitted when the agent provides a final response (no more tool calls).
+  
+  **Measurements:** `%{iteration: integer()}`
+  **Metadata:**
+  ```elixir
+  %{
+    agent_id: String.t(),
+    final_message: Message.t(),
+    total_iterations: integer(),
+    timestamp: DateTime.t()
+  }
+  ```
+
+  ### `[:dantex, :agent, :tool_call_start]`
+  Emitted when a tool call begins execution.
+  
+  **Measurements:** `%{}`
+  **Metadata:**
+  ```elixir
+  %{
+    agent_id: String.t(),
+    tool_name: String.t(),
+    tool_call_id: String.t(),
+    arguments: String.t(), # JSON string
+    timestamp: DateTime.t()
+  }
+  ```
+
+  ### `[:dantex, :agent, :tool_call_complete]`
+  Emitted when a tool call completes.
+  
+  **Measurements:** `%{}`
+  **Metadata:**
+  ```elixir
+  %{
+    agent_id: String.t(),
+    tool_name: String.t(),
+    tool_call_id: String.t(),
+    result: any(),
+    success: boolean(),
+    timestamp: DateTime.t()
+  }
+  ```
+
+  ## Custom Telemetry Handlers
+
+  You can attach custom handlers to these events for logging, metrics, or UI updates:
+
+  ```elixir
+  # Logging handler
+  :telemetry.attach("my-logger", [:dantex, :agent, :message], fn _name, _measurements, metadata, _config ->
+    Logger.info("Agent message received", metadata)
+  end, nil)
+
+  # LiveView/PubSub handler
+  :telemetry.attach("my-liveview", [:dantex, :agent, :message], fn _name, _measurements, metadata, _config ->
+    Phoenix.PubSub.broadcast(MyApp.PubSub, "agent:\#{metadata.agent_id}", {:agent_message, metadata})
+  end, nil)
+
+  # Metrics handler
+  :telemetry.attach("my-metrics", [:dantex, :agent, :tool_call_complete], fn _name, _measurements, metadata, _config ->
+    :telemetry.execute([:my_app, :tool_calls], %{count: 1}, %{
+      tool_name: metadata.tool_name,
+      success: metadata.success
+    })
+  end, nil)
+  ```
+
   Future considerations:
   - How about if agents could decide to use different LLMs and switch from model in function tool calling theirselves? We just have to move the model to the run function instead. That would mean an agent is nothing more then a bunch of messages. You can have replace the system prompt.
 
@@ -117,6 +205,11 @@ defmodule Dantex.Agent do
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
     context = Keyword.get(opts, :context, %{})
 
+    # Generate agent ID if not provided
+    context_with_id = case Map.get(context, :id) do
+      nil -> Map.put(context, :id, UUID.uuid4())
+      _existing_id -> context
+    end
     %__MODULE__{
       model: Model.new(provider, model),
       messages: messages,
@@ -124,7 +217,7 @@ defmodule Dantex.Agent do
       tool_history: [],
       max_failed_retries: max_failed_retries,
       tool_adapter: tool_adapter,
-      context: context
+      context: context_with_id
     }
   end
 
@@ -208,13 +301,29 @@ defmodule Dantex.Agent do
   defp run_conversation_loop(agent, messages, iteration) do
     with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
+      
+      # Emit telemetry event for the processed message
+      :telemetry.execute([:dantex, :agent, :message], %{iteration: iteration}, %{
+        agent_id: agent.context.id,
+        message: processed_msg,
+        has_tool_calls: has_tool_calls?(processed_msg),
+        timestamp: DateTime.utc_now()
+      })
+      
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
       
       # Check if the message has tool calls - if so, continue the loop
       if has_tool_calls?(final_msg) do
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
       else
-        # No tool calls, return the final result
+        # Emit final response telemetry event
+        :telemetry.execute([:dantex, :agent, :response], %{iteration: iteration}, %{
+          agent_id: agent.context.id,
+          final_message: final_msg,
+          total_iterations: iteration + 1,
+          timestamp: DateTime.utc_now()
+        })
+        
         {:ok, final_msg, updated_agent}
       end
     else
@@ -368,6 +477,15 @@ defmodule Dantex.Agent do
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
       if tool == nil do
+      # Emit telemetry event for tool execution start
+      :telemetry.execute([:dantex, :agent, :tool_call_start], %{}, %{
+        agent_id: context.id,
+        tool_name: tool_name,
+        tool_call_id: Map.get(tool_call, :id),
+        arguments: Map.get(tool_call, :function) |> Map.get(:arguments),
+        timestamp: DateTime.utc_now()
+      })
+      
         Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
       else
         arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
@@ -383,6 +501,16 @@ defmodule Dantex.Agent do
             Message.tool_result(Map.get(tool_call, :id), %{error: error})
         end
       end
+      
+      # Emit telemetry event for tool execution completion
+      :telemetry.execute([:dantex, :agent, :tool_call_complete], %{}, %{
+        agent_id: context.id,
+        tool_name: tool_name,
+        tool_call_id: Map.get(tool_call, :id),
+        result: result.content,
+        success: not Map.has_key?(result.content, :error),
+        timestamp: DateTime.utc_now()
+      })
     end)
   end
 
