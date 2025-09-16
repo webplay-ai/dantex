@@ -476,7 +476,6 @@ defmodule Dantex.Agent do
     |> Enum.map(fn tool_call ->
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
-      if tool == nil do
       # Emit telemetry event for tool execution start
       :telemetry.execute([:dantex, :agent, :tool_call_start], %{}, %{
         agent_id: context.id,
@@ -486,6 +485,7 @@ defmodule Dantex.Agent do
         timestamp: DateTime.utc_now()
       })
       
+      result = if tool == nil do
         Message.tool_result(Map.get(tool_call, :id), %{error: "Tool not found: #{tool_name}"})
       else
         arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
@@ -494,8 +494,8 @@ defmodule Dantex.Agent do
         # Use string key to match the JSON-decoded arguments format
         params_with_context = Map.put(arguments, "context", context)
         case tool.call(params_with_context) do
-          {:ok, result} ->
-            Message.tool_result(Map.get(tool_call, :id), result)
+          {:ok, tool_result} ->
+            Message.tool_result(Map.get(tool_call, :id), tool_result)
 
           {:error, error} ->
             Message.tool_result(Map.get(tool_call, :id), %{error: error})
@@ -511,6 +511,8 @@ defmodule Dantex.Agent do
         success: not Map.has_key?(result.content, :error),
         timestamp: DateTime.utc_now()
       })
+      
+      result
     end)
   end
 
