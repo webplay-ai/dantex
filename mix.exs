@@ -38,6 +38,9 @@ defmodule Dantex.MixProject do
       {:openai_ex, "~> 0.8.6"},
       {:kino, "~> 0.14.2"},
 
+      # MCP Support
+      {:hermes_mcp, "~> 0.14.1"},
+
       # Testing
       {:mock, "~> 0.3.0", only: :test}
     ]

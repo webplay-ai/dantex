@@ -21,6 +21,7 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 - Automatic input/output validation using Ecto schemas
 - JSON Schema generation for OpenAI/Ollama function calling
 - Tool adapters handle provider-specific formatting (OpenAI vs XML)
+- MCP (Model Context Protocol) support for external tool servers via Hermes package
 
 ### Evaluation Framework (`lib/eval.ex`)
 - Systematic evaluation of AI models across different providers
@@ -71,6 +72,7 @@ mix evals.setup
 - `httpoison` - HTTP client for API calls
 - `goth` - Google authentication for Gemini
 - `openai_ex` - OpenAI API client
+- `hermes_mcp` - MCP (Model Context Protocol) client support
 - `dialyxir` - Static analysis
 - `credo` - Code quality
 
@@ -82,6 +84,13 @@ config :dantex, :providers,
   gemini: %{api_key: System.get_env("GEMINI_API_KEY")},
   anthropic: %{api_key: System.get_env("ANTHROPIC_API_KEY")},
   ollama: %{api_base: System.get_env("OLLAMA_API_BASE")}
+
+# Optional: Configure MCP tool filtering
+config :dantex, :mcp_filters,
+  MyApp.MCP.FileSystemClient: %{
+    allow: ["read_file", "list_directory"],
+    block: ["delete_file", "format_disk"]
+  }
 ```
 
 ## File Structure
@@ -91,9 +100,61 @@ config :dantex, :providers,
 - `lib/eval.ex` - Evaluation framework
 - `lib/providers/` - Provider implementations
 - `lib/tool/` - Tool adapters and utilities
+- `lib/tool/mcp/` - MCP tool wrappers and utilities
+- `lib/examples/mcp/` - Example MCP client implementations
 - `lib/mix/tasks/evals/` - Mix tasks for evaluation management
 - `evals/` - Evaluation definitions and results
 - `test/` - Test suite
+
+## MCP (Model Context Protocol) Support
+
+### Overview
+Dantex includes first-class support for MCP, allowing agents to use tools from external MCP servers alongside local tools. MCP tools are automatically discovered, validated, and integrated into the agent's tool set.
+
+### Setting Up MCP Clients
+```elixir
+# 1. Create MCP client modules
+defmodule MyApp.MCP.FileSystemClient do
+  use Hermes.Client,
+    name: "FileSystemClient",
+    version: "1.0.0",
+    protocol_version: "2024-11-05",
+    capabilities: []
+end
+
+# 2. Add to supervision tree
+children = [
+  {MyApp.MCP.FileSystemClient,
+   transport: {:stdio, command: "npx", args: ["@modelcontextprotocol/server-filesystem", "/workspace"]}}
+]
+
+# 3. Use in agents
+agent = Agent.new(
+  provider: :openai,
+  model: "gpt-4o-mini",
+  tools: [MyLocalTool],
+  mcp_clients: [MyApp.MCP.FileSystemClient],
+  mcp_filters: %{
+    MyApp.MCP.FileSystemClient => %{
+      allow: ["read_file", "list_directory"],
+      block: ["delete_file", "write_file"]
+    }
+  }
+)
+```
+
+### MCP Tool Filtering
+- **Whitelist/Blacklist**: `allow: [tools]`, `block: [tools]`
+- **Pattern Filtering**: `allow_patterns: [regexes]`, `block_patterns: [regexes]`
+- **Security Levels**: `security_level: :safe | :moderate | :dangerous`
+- **Configuration-based**: Set defaults in `config/config.exs`
+
+### Available MCP Servers
+- `@modelcontextprotocol/server-filesystem` - File operations
+- `@modelcontextprotocol/server-brave-search` - Web search
+- `@modelcontextprotocol/server-github` - GitHub operations
+- `@modelcontextprotocol/server-postgres` - Database operations
+- And many more from the MCP ecosystem
 
 ## Supported Models
 

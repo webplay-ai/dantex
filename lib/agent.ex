@@ -12,9 +12,9 @@ defmodule Dantex.Agent do
 
   ### `[:dantex, :agent, :message]`
   Emitted for each message processed in the conversation loop.
-  
+
   **Measurements:** `%{iteration: integer()}`
-  **Metadata:** 
+  **Metadata:**
   ```elixir
   %{
     agent_id: String.t(),
@@ -32,7 +32,7 @@ defmodule Dantex.Agent do
 
   ### `[:dantex, :agent, :response]`
   Emitted when the agent provides a final response (no more tool calls).
-  
+
   **Measurements:** `%{iteration: integer()}`
   **Metadata:**
   ```elixir
@@ -53,7 +53,7 @@ defmodule Dantex.Agent do
 
   ### `[:dantex, :agent, :tool_call_start]`
   Emitted when a tool call begins execution.
-  
+
   **Measurements:** `%{}`
   **Metadata:**
   ```elixir
@@ -68,7 +68,7 @@ defmodule Dantex.Agent do
 
   ### `[:dantex, :agent, :tool_call_complete]`
   Emitted when a tool call completes.
-  
+
   **Measurements:** `%{}`
   **Metadata:**
   ```elixir
@@ -150,7 +150,7 @@ defmodule Dantex.Agent do
   """
 
   alias Dantex.{Tool, Model, Message, Provider}
-  alias Dantex.Tool.{OpenAIAdapter, ToolAdapter}
+  alias Dantex.Tool.{OpenAIAdapter, ToolAdapter, MCP}
 
   @type t :: %__MODULE__{
           model: Model.t(),
@@ -204,6 +204,8 @@ defmodule Dantex.Agent do
           | {:model, String.t()}
           | {:messages, [Message.t()]}
           | {:tools, [Tool.t()]}
+          | {:mcp_clients, [module()]}
+          | {:mcp_filters, map()}
           | {:context, map()}
           | {:max_failed_retries, non_neg_integer()}
           | {:tool_adapter, ToolAdapter.t()}
@@ -213,6 +215,8 @@ defmodule Dantex.Agent do
     provider = Keyword.get(opts, :provider, :openai)
     model = Keyword.get(opts, :model, "gpt-4o-mini")
     tools = Keyword.get(opts, :tools, [])
+    mcp_clients = Keyword.get(opts, :mcp_clients, [])
+    mcp_filters = Keyword.get(opts, :mcp_filters, %{})
     messages = Keyword.get(opts, :messages, [])
     max_failed_retries = Keyword.get(opts, :max_failed_retries, 0) # 0, equals disabled
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
@@ -223,10 +227,14 @@ defmodule Dantex.Agent do
       nil -> Map.put(context, :id, UUID.uuid4())
       _existing_id -> context
     end
+
+    mcp_tools = discover_mcp_tools(mcp_clients, mcp_filters)
+    all_tools = tools ++ mcp_tools
+
     %__MODULE__{
       model: Model.new(provider, model),
       messages: messages,
-      tools: tools,
+      tools: all_tools,
       tool_history: [],
       max_failed_retries: max_failed_retries,
       tool_adapter: tool_adapter,
@@ -308,14 +316,15 @@ defmodule Dantex.Agent do
 
   # Centralized telemetry emission function
   @spec emit_telemetry(String.t(), atom(), map(), map()) :: :ok
-  defp emit_telemetry(agent_id, event_name, measurements \\ %{}, metadata \\ %{}) do
+  defp emit_telemetry(agent_id, event_name, measurements, metadata) do
     full_metadata = Map.merge(metadata, %{
       agent_id: agent_id,
       timestamp: DateTime.utc_now()
     })
-    
+
     :telemetry.execute([:dantex, :agent, event_name], measurements, full_metadata)
   end
+
   @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) :: {:ok, Message.t(), t()} | {:error, term()}
   defp run_conversation_loop(_agent, _messages, iteration) when iteration >= @max_iterations do
     {:error, "Maximum iterations (#{@max_iterations}) reached. Possible infinite loop detected."}
@@ -324,14 +333,14 @@ defmodule Dantex.Agent do
   defp run_conversation_loop(agent, messages, iteration) do
     with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      
+
       # Emit telemetry event for the processed message
       emit_telemetry(agent.context.id, :message, %{iteration: iteration}, %{
         message: Message.to_telemetry(processed_msg)
       })
-      
+
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
-      
+
       # Check if the message has tool calls - if so, continue the loop
       if has_tool_calls?(final_msg) do
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
@@ -341,7 +350,7 @@ defmodule Dantex.Agent do
           final_message: Message.to_telemetry(final_msg),
           total_iterations: iteration + 1
         })
-        
+
         {:ok, final_msg, updated_agent}
       end
     else
@@ -353,7 +362,7 @@ defmodule Dantex.Agent do
   defp has_tool_calls?(%Message{tool_calls: tool_calls}) when is_list(tool_calls) and length(tool_calls) > 0 do
     true
   end
-  
+
   defp has_tool_calls?(_), do: false
 
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
@@ -390,10 +399,9 @@ defmodule Dantex.Agent do
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
     tool_execution_results = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
-    
-    # Extract messages and original results
+
     {tool_result_messages, original_results} = Enum.unzip(tool_execution_results)
-    
+
     # Only add tool result messages since assistant message was already added
     updated_messages = agent.messages ++ tool_result_messages
 
@@ -463,8 +471,8 @@ defmodule Dantex.Agent do
     else
       agent.tool_history
       |> Enum.filter(fn entry ->
-        entry.tool_name == tool_name && 
-        entry.input_parameters == arguments && 
+        entry.tool_name == tool_name &&
+        entry.input_parameters == arguments &&
         is_map(entry.output) &&
         Map.has_key?(entry.output, :error)
       end)
@@ -495,14 +503,14 @@ defmodule Dantex.Agent do
     |> Enum.map(fn tool_call ->
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
-      
+
       # Emit telemetry event for tool execution start
       emit_telemetry(context.id, :tool_call_start, %{}, %{
         tool_name: tool_name,
         tool_call_id: Map.get(tool_call, :id),
         arguments: Map.get(tool_call, :function) |> Map.get(:arguments)
       })
-      
+
       {result_message, original_result} = if tool == nil do
         error_result = %{error: "Tool not found: #{tool_name}"}
         {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
@@ -521,7 +529,7 @@ defmodule Dantex.Agent do
             {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
         end
       end
-      
+
       # Emit telemetry event for tool execution completion
       emit_telemetry(context.id, :tool_call_complete, %{}, %{
         tool_name: tool_name,
@@ -529,9 +537,30 @@ defmodule Dantex.Agent do
         result: result_message.content,
         success: not (is_map(original_result) and Map.has_key?(original_result, :error))
       })
-      
+
       {result_message, original_result}
     end)
   end
+
+  # MCP Support Functions
+
+  # Discovers tools from MCP clients and applies filters.
+  @spec discover_mcp_tools([module()], map()) :: [module()]
+  defp discover_mcp_tools(mcp_clients, mcp_filters) when is_list(mcp_clients) do
+
+    Enum.flat_map(mcp_clients, fn client_module ->
+      case MCP.discover_tools(client_module, mcp_filters) do
+        {:ok, mcp_tools} ->
+          Logger.info("Discovered #{length(mcp_tools)} tools from MCP client #{inspect(client_module)}")
+          mcp_tools
+
+        {:error, reason} ->
+          Logger.warning("Failed to discover tools from MCP client #{inspect(client_module)}: #{inspect(reason)}")
+          []
+      end
+    end)
+  end
+
+  defp discover_mcp_tools([], _), do: []
 
 end
