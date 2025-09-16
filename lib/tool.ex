@@ -165,6 +165,15 @@ defmodule Dantex.Tool do
             end
           end
         end
+
+        # Generate JSON schema functions
+        def generate_tool_json_schema do
+          Dantex.Tool.JSONSchema.generate_tool_json_schema(__MODULE__)
+        end
+
+        def generate_input_json_schema do
+          Dantex.Tool.JSONSchema.generate_input_json_schema(__MODULE__)
+        end
       end
     else
       # No tool definitions, use defaults
@@ -173,6 +182,14 @@ defmodule Dantex.Tool do
         def tool_name, do: nil
         def tool_description, do: nil
         def __input_schema__, do: nil
+        
+        def generate_tool_json_schema do
+          Dantex.Tool.JSONSchema.generate_tool_json_schema(__MODULE__)
+        end
+
+        def generate_input_json_schema do
+          Dantex.Tool.JSONSchema.generate_input_json_schema(__MODULE__)
+        end
       end
     end
   end
