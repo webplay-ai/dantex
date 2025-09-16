@@ -106,15 +106,51 @@ defmodule Dantex.Agent do
   end, nil)
   ```
 
-  Future considerations:
-  - How about if agents could decide to use different LLMs and switch from model in function tool calling theirselves? We just have to move the model to the run function instead. That would mean an agent is nothing more then a bunch of messages. You can have replace the system prompt.
+  ## Sub-Agent Support
+
+  Agents can have specialized sub-agents that handle specific types of tasks.
+  This enables hierarchical problem-solving where complex tasks can be delegated
+  to experts with specialized knowledge and tools.
+
+  ### Creating Agents with Sub-Agents
+
+      # Create specialized sub-agents
+      code_reviewer = Agent.new(
+        provider: :anthropic,
+        model: "claude-3-opus",
+        messages: [Message.system("You are an expert code reviewer")]
+      )
+      
+      debugger = Agent.new(
+        provider: :openai,
+        model: "gpt-4o",
+        messages: [Message.system("You are a debugging specialist")]
+      )
+      
+      # Create main agent with sub-agents
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [Message.system("You coordinate specialized tasks")],
+        sub_agents: %{
+          "code_reviewer" => code_reviewer,
+          "debugger" => debugger
+        }
+      )
+
+  ### How Sub-Agent Delegation Works
+
+  1. When an agent has sub-agents, a `SubAgentTool` is automatically added to its tools
+  2. The LLM can use this tool to delegate tasks: `delegate_to_sub_agent`
+  3. Sub-agents run in their own context with their specialized prompts and tools
+  4. Results are returned to the main agent to continue the conversation
 
   ## Example
 
       alias Dantex.{Agent, Message}
 
       messages = [
-        "You multiple everythign with 2" |> Message.system()
+        "You multiple everything with 2" |> Message.system()
       ]
 
       agent = Agent.new(
@@ -123,30 +159,30 @@ defmodule Dantex.Agent do
         messages: messages
       )
 
-      {:ok, {response, agent}} = Agent.run(agent, "What is 2+2?")
+      {:ok, response, updated_agent} = Agent.run(agent, "What is 2+2?")
 
-      # Define a plain tool
+      # Define a tool
       defmodule DiceTool do
-        use Dantex.Tool.Plain
+        use Dantex.Tool
 
-        @tool_name "roll_die"
-        @tool_description "Roll a six-sided die and return the result"
-
-        def call(_params) do
-          {:ok, Integer.to_string(Enum.random(1..6))}
+        tool :roll_die,
+          description: "Roll a six-sided die and return the result",
+          input: [sides: [:integer, default: 6]] do
+          
+          {:ok, %{result: Enum.random(1..params.sides)}}
         end
       end
 
-      # Create an agent
+      # Create an agent with tools
       agent = Agent.new(
         provider: :openai,
-        model: "gpt-4o-mini,
-        tools: [DiceTool], // optional
-        max_failed_retries: 3 // optional
+        model: "gpt-4o-mini",
+        tools: [DiceTool],
+        max_failed_retries: 3
       )
 
       # Run the agent
-      {:ok, response, agent} = Agent.run(agent, "Roll the dice")
+      {:ok, response, updated_agent} = Agent.run(agent, "Roll the dice")
   """
 
   alias Dantex.{Tool, Model, Message, Provider}
@@ -159,7 +195,8 @@ defmodule Dantex.Agent do
           tool_history: [Tool.ToolHistory.t()],
           max_failed_retries: non_neg_integer() | nil,
           tool_adapter: module(),
-          context: map()
+          context: map(),
+          sub_agents: %{String.t() => t()}
         }
 
   defstruct [
@@ -169,7 +206,8 @@ defmodule Dantex.Agent do
     :tool_history,
     :max_failed_retries,
     :tool_adapter,
-    :context
+    :context,
+    :sub_agents
   ]
 
   @doc """
@@ -181,6 +219,7 @@ defmodule Dantex.Agent do
     * `:model` - The AI model to use (required)
     * `:messages` - A list of prompt messages (required)
     * `:tools` - List of tool modules to use (default: [])
+    * `:sub_agents` - Map of sub-agent names to Agent instances (default: %{})
     * `:max_failed_retries` - The maximum number of failed retries for a tool call with the same arguments (optional, default: nil)
     * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter - uses OpenAI function calling spec)
     * `:context` - Map of context data passed to tools (default: %{})
@@ -192,6 +231,10 @@ defmodule Dantex.Agent do
         model: "gpt-4o-mini",
         messages: [Message{content: "You are a helpful assistant", role: "system"}],
         tools: [WeatherTool, TimeTool],
+        sub_agents: %{
+          "code_reviewer" => Agent.new(provider: :anthropic, model: "claude-3-opus", tools: [CodeAnalysisTool]),
+          "debugger" => Agent.new(provider: :openai, model: "gpt-4o", tools: [DebugTool])
+        },
         max_failed_retries: 3,
         tool_adapter: OpenAIAdapter,
         context: %{weather_api_key: "your_key", user_id: 123}
@@ -204,6 +247,7 @@ defmodule Dantex.Agent do
           | {:model, String.t()}
           | {:messages, [Message.t()]}
           | {:tools, [Tool.t()]}
+          | {:sub_agents, %{String.t() => t()}}
           | {:mcp_clients, [module()]}
           | {:mcp_filters, map()}
           | {:context, map()}
@@ -215,6 +259,7 @@ defmodule Dantex.Agent do
     provider = Keyword.get(opts, :provider, :openai)
     model = Keyword.get(opts, :model, "gpt-4o-mini")
     tools = Keyword.get(opts, :tools, [])
+    sub_agents = Keyword.get(opts, :sub_agents, %{})
     mcp_clients = Keyword.get(opts, :mcp_clients, [])
     mcp_filters = Keyword.get(opts, :mcp_filters, %{})
     messages = Keyword.get(opts, :messages, [])
@@ -229,7 +274,11 @@ defmodule Dantex.Agent do
     end
 
     mcp_tools = discover_mcp_tools(mcp_clients, mcp_filters)
-    all_tools = tools ++ mcp_tools
+    
+    # Add SubAgentTool if there are sub_agents, so LLM can delegate to them
+    sub_agent_tools = if map_size(sub_agents) > 0, do: [Dantex.Tool.SubAgentTool], else: []
+    
+    all_tools = tools ++ mcp_tools ++ sub_agent_tools
 
     %__MODULE__{
       model: Model.new(provider, model),
@@ -238,7 +287,8 @@ defmodule Dantex.Agent do
       tool_history: [],
       max_failed_retries: max_failed_retries,
       tool_adapter: tool_adapter,
-      context: context_with_id
+      context: context_with_id,
+      sub_agents: sub_agents
     }
   end
 
@@ -398,7 +448,9 @@ defmodule Dantex.Agent do
 
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
-    tool_execution_results = execute_tool_calls(agent.tools, last_msg.tool_calls, agent.context)
+    # Include sub_agents in context for tool execution
+    enhanced_context = Map.put(agent.context, :sub_agents, agent.sub_agents)
+    tool_execution_results = execute_tool_calls(agent.tools, last_msg.tool_calls, enhanced_context)
 
     {tool_result_messages, original_results} = Enum.unzip(tool_execution_results)
 

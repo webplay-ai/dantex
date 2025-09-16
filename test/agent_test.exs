@@ -179,6 +179,65 @@ defmodule Dantex.AgentTest do
     end
   end
 
+  describe "sub-agent functionality" do
+    test "creates agent with sub-agents" do
+      # Create sub-agents
+      code_reviewer = Agent.new(
+        provider: :openai,
+        model: "gpt-4o",
+        messages: [Message.system("You are a code reviewer")]
+      )
+      
+      debugger = Agent.new(
+        provider: :openai,
+        model: "gpt-4o",
+        messages: [Message.system("You are a debugger")]
+      )
+      
+      # Create main agent with sub-agents
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [Message.system("You are a helpful assistant")],
+        sub_agents: %{
+          "code_reviewer" => code_reviewer,
+          "debugger" => debugger
+        }
+      )
+      
+      assert map_size(agent.sub_agents) == 2
+      assert Map.has_key?(agent.sub_agents, "code_reviewer")
+      assert Map.has_key?(agent.sub_agents, "debugger")
+      
+      # Should include SubAgentTool since we have sub_agents
+      sub_agent_tool = Enum.find(agent.tools, fn tool -> 
+        tool == Dantex.Tool.SubAgentTool
+      end)
+      assert sub_agent_tool != nil
+    end
+    
+    test "agent without sub-agents has empty sub_agents map" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: []
+      )
+      
+      assert agent.sub_agents == %{}
+      
+      # Should not include SubAgentTool since no sub_agents
+      sub_agent_tool = Enum.find(agent.tools, fn tool -> 
+        tool == Dantex.Tool.SubAgentTool
+      end)
+      assert sub_agent_tool == nil
+    end
+    
+    test "SubAgentTool validates input schema" do
+      # This tests that the tool is properly defined
+      assert Dantex.Tool.SubAgentTool.tool_name() == "delegate_to_sub_agent"
+      assert is_binary(Dantex.Tool.SubAgentTool.tool_description())
+    end
+  end
 
   # Simple integration test that doesn't require mocking
   describe "telemetry metadata" do
