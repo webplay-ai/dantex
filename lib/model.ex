@@ -53,6 +53,7 @@ defmodule Dantex.Model do
       :openai -> Dantex.Providers.OpenAI
       :ollama -> Dantex.Providers.Ollama
       :gemini -> Dantex.Providers.Gemini
+      :together -> Dantex.Providers.Together
       :anthropic -> Dantex.Providers.Anthropic
       :baseten -> Dantex.Providers.Baseten
       _ -> raise "Unknown provider: #{provider_key}"
@@ -90,7 +91,7 @@ defmodule Dantex.Model do
       messages: messages,
       tools: tools
     }
-    
+
     case provider.chat_completion(opts) do
       {:ok, messages, usage} when is_list(messages) ->
         last_message = List.last(messages)
