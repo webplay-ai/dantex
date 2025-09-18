@@ -1,24 +1,13 @@
 defmodule Dantex.Providers.OpenAI do
   @moduledoc """
   OpenAI provider implementation for chat completions.
-  
-  Supports various OpenAI models including GPT-4, GPT-3.5, O1, and O3 series.
+
   Handles authentication, tool calling, message formatting, and response parsing.
   """
-  @supported_models [
-    "gpt-4o-2024-08-06",
-    "gpt-4o-mini-2024-07-18",
-    "gpt-3.5-turbo-0125",
-    "o3-mini-2025-01-31",
-    "o1-mini-2024-09-12",
-    "o1-2024-12-17",
-    "gpt-4.5-preview-2025-02-27"
-  ]
 
   @behaviour Dantex.Provider
 
   require Logger
-
 
   alias OpenaiEx.Chat
   alias Dantex.Message
@@ -28,45 +17,59 @@ defmodule Dantex.Providers.OpenAI do
           | {:error, String.t()}
           | {:rate_limit, String.t()}
   def chat_completion(opts) when is_map(opts) do
-    # Extract required parameters
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
-    
-    unless model in @supported_models do
-      {:error, "Invalid model"}
-    end
 
-    # Get API configuration - either from opts or from application config
     api_key = Map.get(opts, :api_key) || Dantex.Providers.Config.get_api_key(:openai)
-    base_url = Map.get(opts, :base_url) || Dantex.Providers.Config.get_config_value(:openai, :base_url)
-    
-    # Increase timeout from 110 seconds to 180 seconds (3 minutes)
-    cfg = 
+
+    base_url =
+      Map.get(opts, :base_url) || Dantex.Providers.Config.get_config_value(:openai, :base_url)
+
+    cfg =
       case base_url do
-        nil -> 
+        nil ->
           OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(180_000)
-        custom_url -> 
-          OpenaiEx.new(api_key) 
-          |> OpenaiEx.with_base_url(custom_url) 
+
+        custom_url ->
+          OpenaiEx.new(api_key)
+          |> OpenaiEx.with_base_url(custom_url)
           |> OpenaiEx.with_receive_timeout(180_000)
       end
 
-    # Build request parameters with defaults and overrides
     base_params = [
       model: model,
       messages: format_messages(messages),
       temperature: Map.get(opts, :temperature, 0.0)
     ]
-    
-    # Add optional parameters if provided
+
     optional_params = []
-    optional_params = if Map.has_key?(opts, :max_tokens), do: [{:max_tokens, Map.get(opts, :max_tokens)} | optional_params], else: optional_params
-    optional_params = if Map.has_key?(opts, :top_p), do: [{:top_p, Map.get(opts, :top_p)} | optional_params], else: optional_params
-    optional_params = if Map.has_key?(opts, :presence_penalty), do: [{:presence_penalty, Map.get(opts, :presence_penalty)} | optional_params], else: optional_params
-    optional_params = if Map.has_key?(opts, :frequency_penalty), do: [{:frequency_penalty, Map.get(opts, :frequency_penalty)} | optional_params], else: optional_params
-    optional_params = if Map.has_key?(opts, :stop), do: [{:stop, Map.get(opts, :stop)} | optional_params], else: optional_params
-    
+
+    optional_params =
+      if Map.has_key?(opts, :max_tokens),
+        do: [{:max_tokens, Map.get(opts, :max_tokens)} | optional_params],
+        else: optional_params
+
+    optional_params =
+      if Map.has_key?(opts, :top_p),
+        do: [{:top_p, Map.get(opts, :top_p)} | optional_params],
+        else: optional_params
+
+    optional_params =
+      if Map.has_key?(opts, :presence_penalty),
+        do: [{:presence_penalty, Map.get(opts, :presence_penalty)} | optional_params],
+        else: optional_params
+
+    optional_params =
+      if Map.has_key?(opts, :frequency_penalty),
+        do: [{:frequency_penalty, Map.get(opts, :frequency_penalty)} | optional_params],
+        else: optional_params
+
+    optional_params =
+      if Map.has_key?(opts, :stop),
+        do: [{:stop, Map.get(opts, :stop)} | optional_params],
+        else: optional_params
+
     params = base_params ++ optional_params
 
     req =
@@ -88,8 +91,14 @@ defmodule Dantex.Providers.OpenAI do
       {:error, %OpenaiEx.Error{} = error} ->
         {:error, "OpenAI Error: #{error.message || "Unknown error"}"}
 
+      {:error, "Rate limit exceeded"} ->
+        {:rate_limit, "Rate limit exceeded"}
+
+      {:error, reason} when is_binary(reason) and reason =~ "rate limit" ->
+        {:rate_limit, reason}
+
       {:error, reason} ->
-        {:error, reason}
+        {:error, inspect(reason)}
     end
   end
 
@@ -123,9 +132,8 @@ defmodule Dantex.Providers.OpenAI do
       choices
       |> Enum.map(fn choice ->
         case choice do
-          %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}} 
+          %{"message" => %{"role" => role, "content" => content, "tool_calls" => tool_calls}}
           when is_list(tool_calls) ->
-            # Convert tool_calls to our structured type - only if it's a proper list
             formatted_tool_calls =
               Enum.map(tool_calls, fn tool_call ->
                 %{
@@ -140,10 +148,20 @@ defmodule Dantex.Providers.OpenAI do
 
             %Message{role: role, content: content, tool_calls: formatted_tool_calls}
 
-          %{"message" => %{"role" => role, "content" => content, "tool_calls" => invalid_tool_calls}} ->
+          %{
+            "message" => %{
+              "role" => role,
+              "content" => content,
+              "tool_calls" => invalid_tool_calls
+            }
+          } ->
             # Handle case where tool_calls field exists but contains invalid data
             require Logger
-            Logger.warning("OpenAI returned invalid tool_calls format: #{inspect(invalid_tool_calls)}")
+
+            Logger.warning(
+              "OpenAI returned invalid tool_calls format: #{inspect(invalid_tool_calls)}"
+            )
+
             %Message{role: role, content: content, tool_calls: nil}
 
           %{"message" => %{"role" => role, "content" => content}} ->
@@ -157,7 +175,6 @@ defmodule Dantex.Providers.OpenAI do
         end
       end)
 
-    # Transform OpenAI usage to match our Provider.usage type
     formatted_usage = %{
       total_tokens: usage["total_tokens"]
     }
