@@ -94,8 +94,11 @@ defmodule Dantex.Providers.OpenAI do
       {:error, "Rate limit exceeded"} ->
         {:rate_limit, "Rate limit exceeded"}
 
-      {:error, reason} when is_binary(reason) and reason =~ "rate limit" ->
-        {:rate_limit, reason}
+      {:error, reason} when is_binary(reason) ->
+        case String.contains?(String.downcase(reason), "rate limit") do
+          true -> {:rate_limit, reason}
+          false -> {:error, reason}
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
