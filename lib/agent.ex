@@ -82,6 +82,48 @@ defmodule Dantex.Agent do
   }
   ```
 
+  ### `[:dantex, :agent, :ai_request]`
+  Emitted when messages are sent to the AI provider.
+
+  **Measurements:** `%{iteration: integer()}`
+  **Metadata:**
+  ```elixir
+  %{
+    agent_id: String.t(),
+    message: %{
+      role: String.t(),
+      content: String.t() | nil,
+      has_tool_calls: boolean(),
+      tool_calls_count: integer(),
+      tool_calls: list() | nil,
+      tool_call_id: String.t() | nil
+    },
+    timestamp: DateTime.t()
+  }
+  ```
+
+  ### `[:dantex, :agent, :tool_result_message]`
+  Emitted when a tool call result message is created.
+
+  **Measurements:** `%{}`
+  **Metadata:**
+  ```elixir
+  %{
+    agent_id: String.t(),
+    tool_name: String.t(),
+    tool_call_id: String.t(),
+    message: %{
+      role: String.t(),
+      content: String.t() | nil,
+      has_tool_calls: boolean(),
+      tool_calls_count: integer(),
+      tool_calls: list() | nil,
+      tool_call_id: String.t() | nil
+    },
+    timestamp: DateTime.t()
+  }
+  ```
+
   ## Custom Telemetry Handlers
 
   You can attach custom handlers to these events for logging, metrics, or UI updates:
@@ -592,6 +634,13 @@ defmodule Dantex.Agent do
         tool_call_id: Map.get(tool_call, :id),
         result: result_message.content,
         success: not (is_map(original_result) and Map.has_key?(original_result, :error))
+      })
+
+      # Emit telemetry event for tool call result message
+      emit_telemetry(context.id, :tool_result_message, %{}, %{
+        tool_name: tool_name,
+        tool_call_id: Map.get(tool_call, :id),
+        message: Message.to_telemetry(result_message)
       })
 
       {result_message, original_result}
