@@ -20,11 +20,16 @@ defmodule Dantex.Providers.Anthropic do
 
   alias Dantex.Message
 
-  @spec chat_completion(String.t(), list(Message.t()), list(Dantex.Tool.t())) ::
+  @spec chat_completion(map()) ::
           {:ok, list(Message.t()), Dantex.Provider.usage()}
           | {:error, String.t()}
           | {:rate_limit, String.t()}
-  def chat_completion(model, messages, tools \\ []) do
+  def chat_completion(opts) when is_map(opts) do
+    # Extract required parameters
+    model = Map.get(opts, :model)
+    messages = Map.get(opts, :messages, [])
+    tools = Map.get(opts, :tools, [])
+    
     unless model in @supported_models do
       {:error, "Invalid model"}
     end

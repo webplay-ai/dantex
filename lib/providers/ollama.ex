@@ -40,14 +40,19 @@ defmodule Dantex.Providers.Ollama do
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
+  @spec chat_completion(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages, tools \\ []) when is_list(messages) do
+  def chat_completion(opts) when is_map(opts) do
+    # Extract required parameters
+    model = Map.get(opts, :model)
+    messages = Map.get(opts, :messages, [])
+    tools = Map.get(opts, :tools, [])
+    
     unless model in @supported_models do
       {:error, "Invalid model"}
     end
 
-    api_base = Dantex.Providers.Config.get_config_value(:ollama, :api_base) || @default_api_base
+    api_base = Map.get(opts, :api_base) || Dantex.Providers.Config.get_config_value(:ollama, :api_base) || @default_api_base
     url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]

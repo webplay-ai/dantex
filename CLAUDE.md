@@ -83,7 +83,17 @@ config :dantex, :providers,
   openai: %{api_key: System.get_env("OPENAI_API_KEY")},
   gemini: %{api_key: System.get_env("GEMINI_API_KEY")},
   anthropic: %{api_key: System.get_env("ANTHROPIC_API_KEY")},
-  ollama: %{api_base: System.get_env("OLLAMA_API_BASE")}
+  ollama: %{api_base: System.get_env("OLLAMA_API_BASE")},
+  baseten: %{
+    api_key: System.get_env("BASETEN_API_KEY"),
+    # Optional: customize model parameters
+    temperature: 1.0,
+    max_tokens: 8000,
+    top_p: 1.0,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    stop: []
+  }
 
 # Optional: Configure MCP tool filtering
 config :dantex, :mcp_filters,

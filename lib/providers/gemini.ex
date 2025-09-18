@@ -30,14 +30,19 @@ defmodule Dantex.Providers.Gemini do
 
   The generated content, or an error message.
   """
-  @spec chat_completion(String.t(), [Message.t()], list(Tool.t())) ::
+  @spec chat_completion(map()) ::
           {:ok, [Message.t()], Provider.usage()} | {:error, String.t()}
-  def chat_completion(model, messages, tools \\ []) when is_list(messages) do
+  def chat_completion(opts) when is_map(opts) do
+    # Extract required parameters
+    model = Map.get(opts, :model)
+    messages = Map.get(opts, :messages, [])
+    tools = Map.get(opts, :tools, [])
+    
     unless model in @supported_models do
       {:error, "Invalid model"}
     end
 
-    api_key = Dantex.Providers.Config.get_api_key(:gemini)
+    api_key = Map.get(opts, :api_key) || Dantex.Providers.Config.get_api_key(:gemini)
 
     url =
       "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent?key=#{api_key}"

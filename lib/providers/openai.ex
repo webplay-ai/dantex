@@ -19,59 +19,62 @@ defmodule Dantex.Providers.OpenAI do
 
   require Logger
 
-  @spec chat_completion(binary(), [Dantex.Message.t()]) ::
-          {:error, <<_::64, _::_*8>>}
-          | {:rate_limit, <<_::152>>}
-          | {:ok, [Dantex.Message.t()], %{total_tokens: integer()}}
-  @doc """
-  Makes a completion request to OpenAI's GPT-4 model.
-
-  ## Parameters
-    * `prompt` - The text prompt to send to the model
-    * `format` - The format of the response
-
-  ## Returns
-    * `{:ok, %{"something": "...", "another_prop": ...}}` - The generated content as a map
-    * `{:error, reason}` - If the API request fails
-    * `{:rate_limit, reason}` - If the rate limit is exceeded
-
-  ## Examples
-      iex> Breaking.Ai.completion("What is 2+2?", %{type: "json_object"})
-      {:ok, %{"..."}}
-  """
 
   alias OpenaiEx.Chat
   alias Dantex.Message
 
-  @spec chat_completion(String.t(), list(Message.t()), list(Dantex.Tool.t())) ::
+  @spec chat_completion(map()) ::
           {:ok, list(Message.t()), Dantex.Provider.usage()}
           | {:error, String.t()}
           | {:rate_limit, String.t()}
-  def chat_completion(model, messages, tools \\ []) do
+  def chat_completion(opts) when is_map(opts) do
+    # Extract required parameters
+    model = Map.get(opts, :model)
+    messages = Map.get(opts, :messages, [])
+    tools = Map.get(opts, :tools, [])
+    
     unless model in @supported_models do
       {:error, "Invalid model"}
     end
 
-    api_key = Dantex.Providers.Config.get_api_key(:openai)
+    # Get API configuration - either from opts or from application config
+    api_key = Map.get(opts, :api_key) || Dantex.Providers.Config.get_api_key(:openai)
+    base_url = Map.get(opts, :base_url) || Dantex.Providers.Config.get_config_value(:openai, :base_url)
+    
     # Increase timeout from 110 seconds to 180 seconds (3 minutes)
-    cfg = OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(180_000)
+    cfg = 
+      case base_url do
+        nil -> 
+          OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(180_000)
+        custom_url -> 
+          OpenaiEx.new(api_key) 
+          |> OpenaiEx.with_base_url(custom_url) 
+          |> OpenaiEx.with_receive_timeout(180_000)
+      end
+
+    # Build request parameters with defaults and overrides
+    base_params = [
+      model: model,
+      messages: format_messages(messages),
+      temperature: Map.get(opts, :temperature, 0.0)
+    ]
+    
+    # Add optional parameters if provided
+    optional_params = []
+    optional_params = if Map.has_key?(opts, :max_tokens), do: [{:max_tokens, Map.get(opts, :max_tokens)} | optional_params], else: optional_params
+    optional_params = if Map.has_key?(opts, :top_p), do: [{:top_p, Map.get(opts, :top_p)} | optional_params], else: optional_params
+    optional_params = if Map.has_key?(opts, :presence_penalty), do: [{:presence_penalty, Map.get(opts, :presence_penalty)} | optional_params], else: optional_params
+    optional_params = if Map.has_key?(opts, :frequency_penalty), do: [{:frequency_penalty, Map.get(opts, :frequency_penalty)} | optional_params], else: optional_params
+    optional_params = if Map.has_key?(opts, :stop), do: [{:stop, Map.get(opts, :stop)} | optional_params], else: optional_params
+    
+    params = base_params ++ optional_params
 
     req =
       if Enum.empty?(tools) do
-        Chat.Completions.new(
-          model: model,
-          messages: format_messages(messages),
-          temperature: 0.0
-        )
+        Chat.Completions.new(params)
       else
         formatted_tools = format_tools(tools)
-
-        Chat.Completions.new(
-          model: model,
-          messages: format_messages(messages),
-          temperature: 0.0,
-          tools: formatted_tools
-        )
+        Chat.Completions.new([{:tools, formatted_tools} | params])
       end
 
     with {:ok, result} <-

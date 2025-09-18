@@ -263,21 +263,23 @@ defmodule Dantex.Agent do
     mcp_clients = Keyword.get(opts, :mcp_clients, [])
     mcp_filters = Keyword.get(opts, :mcp_filters, %{})
     messages = Keyword.get(opts, :messages, [])
-    max_failed_retries = Keyword.get(opts, :max_failed_retries, 0) # 0, equals disabled
+    # 0, equals disabled
+    max_failed_retries = Keyword.get(opts, :max_failed_retries, 0)
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
     context = Keyword.get(opts, :context, %{})
 
     # Generate agent ID if not provided
-    context_with_id = case Map.get(context, :id) do
-      nil -> Map.put(context, :id, UUID.uuid4())
-      _existing_id -> context
-    end
+    context_with_id =
+      case Map.get(context, :id) do
+        nil -> Map.put(context, :id, UUID.uuid4())
+        _existing_id -> context
+      end
 
     mcp_tools = discover_mcp_tools(mcp_clients, mcp_filters)
-    
+
     # Add SubAgentTool if there are sub_agents, so LLM can delegate to them
     sub_agent_tools = if map_size(sub_agents) > 0, do: [Dantex.Tool.SubAgentTool], else: []
-    
+
     all_tools = tools ++ mcp_tools ++ sub_agent_tools
 
     %__MODULE__{
@@ -332,10 +334,10 @@ defmodule Dantex.Agent do
   end
 
   @type tool_result :: %{
-    tool_name: String.t(),
-    input_parameters: map(),
-    output: map()
-  }
+          tool_name: String.t(),
+          input_parameters: map(),
+          output: map()
+        }
 
   @doc """
   Runs the agent with the given prompt. This is what happens:
@@ -364,18 +366,19 @@ defmodule Dantex.Agent do
 
   @max_iterations 50
 
-  # Centralized telemetry emission function
   @spec emit_telemetry(String.t(), atom(), map(), map()) :: :ok
   defp emit_telemetry(agent_id, event_name, measurements, metadata) do
-    full_metadata = Map.merge(metadata, %{
-      agent_id: agent_id,
-      timestamp: DateTime.utc_now()
-    })
+    full_metadata =
+      Map.merge(metadata, %{
+        agent_id: agent_id,
+        timestamp: DateTime.utc_now()
+      })
 
     :telemetry.execute([:dantex, :agent, event_name], measurements, full_metadata)
   end
 
-  @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) :: {:ok, Message.t(), t()} | {:error, term()}
+  @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) ::
+          {:ok, Message.t(), t()} | {:error, term()}
   defp run_conversation_loop(_agent, _messages, iteration) when iteration >= @max_iterations do
     {:error, "Maximum iterations (#{@max_iterations}) reached. Possible infinite loop detected."}
   end
@@ -383,19 +386,15 @@ defmodule Dantex.Agent do
   defp run_conversation_loop(agent, messages, iteration) do
     with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-
-      # Emit telemetry event for the processed message
       emit_telemetry(agent.context.id, :message, %{iteration: iteration}, %{
         message: Message.to_telemetry(processed_msg)
       })
 
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
 
-      # Check if the message has tool calls - if so, continue the loop
       if has_tool_calls?(final_msg) do
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
       else
-        # Emit final response telemetry event
         emit_telemetry(agent.context.id, :response, %{iteration: iteration}, %{
           final_message: Message.to_telemetry(final_msg),
           total_iterations: iteration + 1
@@ -409,7 +408,8 @@ defmodule Dantex.Agent do
   end
 
   @spec has_tool_calls?(Message.t()) :: boolean()
-  defp has_tool_calls?(%Message{tool_calls: tool_calls}) when is_list(tool_calls) and length(tool_calls) > 0 do
+  defp has_tool_calls?(%Message{tool_calls: tool_calls})
+       when is_list(tool_calls) and length(tool_calls) > 0 do
     true
   end
 
@@ -418,13 +418,11 @@ defmodule Dantex.Agent do
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
        when is_list(tool_calls) and length(tool_calls) > 0 do
-    # Add the assistant message with tool calls to the agent messages first
     updated_agent = %{agent | messages: agent.messages ++ [last_msg]}
     process_tool_calls(updated_agent, last_msg)
   end
 
   defp process_message(agent, last_msg) do
-    # No tool calls, just return the result
     updated_agent = %{agent | messages: agent.messages ++ [last_msg]}
     {:ok, last_msg, updated_agent}
   end
@@ -438,8 +436,10 @@ defmodule Dantex.Agent do
       {:error, reason} ->
         error_message = %Message{
           role: "assistant",
-          content: "Could not execute tool call, reached max failed retries for last tool call.\nError details:\n#{inspect(reason)}"
+          content:
+            "Could not execute tool call, reached max failed retries for last tool call.\nError details:\n#{inspect(reason)}"
         }
+
         updated_messages = agent.messages ++ [error_message]
         updated_agent = %{agent | messages: updated_messages}
         {:ok, last_msg, updated_agent}
@@ -448,13 +448,13 @@ defmodule Dantex.Agent do
 
   @spec execute_and_update_agent(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp execute_and_update_agent(agent, last_msg) do
-    # Include sub_agents in context for tool execution
     enhanced_context = Map.put(agent.context, :sub_agents, agent.sub_agents)
-    tool_execution_results = execute_tool_calls(agent.tools, last_msg.tool_calls, enhanced_context)
+
+    tool_execution_results =
+      execute_tool_calls(agent.tools, last_msg.tool_calls, enhanced_context)
 
     {tool_result_messages, original_results} = Enum.unzip(tool_execution_results)
 
-    # Only add tool result messages since assistant message was already added
     updated_messages = agent.messages ++ tool_result_messages
 
     tool_results =
@@ -464,14 +464,10 @@ defmodule Dantex.Agent do
       end)
 
     updated_tool_history = update_tool_history(agent.tool_history, tool_results)
-    updated_agent = %{agent |
-      messages: updated_messages,
-      tool_history: updated_tool_history
-    }
+    updated_agent = %{agent | messages: updated_messages, tool_history: updated_tool_history}
 
     {:ok, last_msg, updated_agent}
   end
-
 
   @spec check_max_failed_retries(t(), list(Message.tool_call())) ::
           {:ok} | {:error, term()}
@@ -494,7 +490,8 @@ defmodule Dantex.Agent do
       if exceeded_failed_retries?(agent, tool_name, arguments) do
         {:halt, {:error, "Max failed retries exceeded for tool #{tool_name}"}}
       else
-        {:cont, acc} # Continue checking other tool calls
+        # Continue checking other tool calls
+        {:cont, acc}
       end
     end)
   end
@@ -502,7 +499,10 @@ defmodule Dantex.Agent do
   @doc """
   Updates the tool history with new tool results.
   """
-  @spec update_tool_history([Tool.ToolHistory.t()], list({Message.tool_call(), Message.t(), map()})) ::
+  @spec update_tool_history(
+          [Tool.ToolHistory.t()],
+          list({Message.tool_call(), Message.t(), map()})
+        ) ::
           [Tool.ToolHistory.t()]
   def update_tool_history(history, tool_results) do
     Enum.reduce(tool_results, history, fn {tool_call, _tool_result, result}, acc ->
@@ -512,6 +512,7 @@ defmodule Dantex.Agent do
         output: result,
         timestamp: DateTime.utc_now()
       }
+
       [tool_history_entry | acc]
     end)
   end
@@ -524,9 +525,9 @@ defmodule Dantex.Agent do
       agent.tool_history
       |> Enum.filter(fn entry ->
         entry.tool_name == tool_name &&
-        entry.input_parameters == arguments &&
-        is_map(entry.output) &&
-        Map.has_key?(entry.output, :error)
+          entry.input_parameters == arguments &&
+          is_map(entry.output) &&
+          Map.has_key?(entry.output, :error)
       end)
       |> length() >= agent.max_failed_retries
     end
@@ -551,6 +552,7 @@ defmodule Dantex.Agent do
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [{Message.t(), any()}]
   defp execute_tool_calls(tools, tool_calls, context) do
     tool_calls = if is_list(tool_calls), do: tool_calls, else: [tool_calls]
+
     tool_calls
     |> Enum.map(fn tool_call ->
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
@@ -563,24 +565,26 @@ defmodule Dantex.Agent do
         arguments: Map.get(tool_call, :function) |> Map.get(:arguments)
       })
 
-      {result_message, original_result} = if tool == nil do
-        error_result = %{error: "Tool not found: #{tool_name}"}
-        {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
-      else
-        arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
+      {result_message, original_result} =
+        if tool == nil do
+          error_result = %{error: "Tool not found: #{tool_name}"}
+          {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
+        else
+          arguments = Map.get(tool_call, :function) |> Map.get(:arguments) |> Jason.decode!()
 
-        # Execute the tool with decoded arguments and context
-        # Use string key to match the JSON-decoded arguments format
-        params_with_context = Map.put(arguments, "context", context)
-        case tool.call(params_with_context) do
-          {:ok, tool_result} ->
-            {Message.tool_result(Map.get(tool_call, :id), tool_result), tool_result}
+          # Execute the tool with decoded arguments and context
+          # Use string key to match the JSON-decoded arguments format
+          params_with_context = Map.put(arguments, "context", context)
 
-          {:error, error} ->
-            error_result = %{error: error}
-            {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
+          case tool.call(params_with_context) do
+            {:ok, tool_result} ->
+              {Message.tool_result(Map.get(tool_call, :id), tool_result), tool_result}
+
+            {:error, error} ->
+              error_result = %{error: error}
+              {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
+          end
         end
-      end
 
       # Emit telemetry event for tool execution completion
       emit_telemetry(context.id, :tool_call_complete, %{}, %{
@@ -599,20 +603,24 @@ defmodule Dantex.Agent do
   # Discovers tools from MCP clients and applies filters.
   @spec discover_mcp_tools([module()], map()) :: [module()]
   defp discover_mcp_tools(mcp_clients, mcp_filters) when is_list(mcp_clients) do
-
     Enum.flat_map(mcp_clients, fn client_module ->
       case MCP.discover_tools(client_module, mcp_filters) do
         {:ok, mcp_tools} ->
-          Logger.info("Discovered #{length(mcp_tools)} tools from MCP client #{inspect(client_module)}")
+          Logger.info(
+            "Discovered #{length(mcp_tools)} tools from MCP client #{inspect(client_module)}"
+          )
+
           mcp_tools
 
         {:error, reason} ->
-          Logger.warning("Failed to discover tools from MCP client #{inspect(client_module)}: #{inspect(reason)}")
+          Logger.warning(
+            "Failed to discover tools from MCP client #{inspect(client_module)}: #{inspect(reason)}"
+          )
+
           []
       end
     end)
   end
 
   defp discover_mcp_tools([], _), do: []
-
 end

@@ -6,7 +6,6 @@ defmodule Dantex.Provider do
   chat completions with consistent message and tool handling across providers.
   """
   alias Dantex.Message
-  alias Dantex.Tool
 
   @type message :: Message.t()
   @type t :: module()
@@ -15,6 +14,6 @@ defmodule Dantex.Provider do
           total_tokens: integer()
         }
 
-  @callback chat_completion(String.t(), list(Message.t()), list(Tool.t())) ::
+  @callback chat_completion(map()) ::
               {:ok, list(Message.t()), usage()} | {:error, term()}
 end

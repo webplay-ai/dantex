@@ -54,6 +54,7 @@ defmodule Dantex.Model do
       :ollama -> Dantex.Providers.Ollama
       :gemini -> Dantex.Providers.Gemini
       :anthropic -> Dantex.Providers.Anthropic
+      :baseten -> Dantex.Providers.Baseten
       _ -> raise "Unknown provider: #{provider_key}"
     end
   end
@@ -84,7 +85,13 @@ defmodule Dantex.Model do
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
   def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools)
       when not is_nil(provider) do
-    case provider.chat_completion(model, messages, tools) do
+    opts = %{
+      model: model,
+      messages: messages,
+      tools: tools
+    }
+    
+    case provider.chat_completion(opts) do
       {:ok, messages, usage} when is_list(messages) ->
         last_message = List.last(messages)
         {:ok, {last_message, messages}, usage}
