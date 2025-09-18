@@ -30,7 +30,7 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 - Test case management with expected vs actual output comparison
 
 ### Provider System (`lib/providers/`)
-- Unified interface across OpenAI, Gemini, Anthropic, and Ollama
+- Unified interface across OpenAI, Gemini, Anthropic, Ollama, Baseten, and Together AI
 - Model configuration and chat completion handling
 - Provider-specific authentication and API handling
 
@@ -93,6 +93,17 @@ config :dantex, :providers,
     presence_penalty: 0,
     frequency_penalty: 0,
     stop: []
+  },
+  together: %{
+    api_key: System.get_env("TOGETHER_API_KEY"),
+    # Optional: customize model parameters
+    temperature: 0.7,
+    max_tokens: 512,
+    top_p: 0.7,
+    stop: [],
+    # Together AI specific options
+    safety_model: nil,  # Optional safety model for content moderation
+    stream: false       # Enable streaming responses
   }
 
 # Optional: Configure MCP tool filtering

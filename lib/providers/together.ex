@@ -1,8 +1,8 @@
-defmodule Dantex.Providers.Baseten do
+defmodule Dantex.Providers.Together do
   @moduledoc """
-  Baseten provider implementation for chat completions.
+  Together AI provider implementation for chat completions.
   
-  Direct HTTP implementation for Baseten's OpenAI-compatible API endpoints
+  Direct HTTP implementation for Together AI's OpenAI-compatible API endpoints
   with custom error handling and response parsing.
   """
 
@@ -16,29 +16,27 @@ defmodule Dantex.Providers.Baseten do
           | {:error, String.t()}
           | {:rate_limit, String.t()}
   def chat_completion(opts) when is_map(opts) do
-    baseten_config = get_baseten_config()
+    together_config = get_together_config()
     
-    unless baseten_config[:api_key] do
-      {:error, "Baseten API key not configured"}
+    unless together_config[:api_key] do
+      {:error, "Together AI API key not configured"}
     end
     
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
 
-    api_key = baseten_config[:api_key]
-    base_url = baseten_config[:base_url] || "https://inference.baseten.co"
+    api_key = together_config[:api_key]
+    base_url = together_config[:base_url] || "https://api.together.xyz"
     
     # Build request payload
     payload = %{
       model: model,
       messages: format_messages(messages),
-      temperature: Map.get(opts, :temperature, baseten_config[:temperature] || 1.0),
-      max_tokens: Map.get(opts, :max_tokens, baseten_config[:max_tokens] || 8000),
-      top_p: Map.get(opts, :top_p, baseten_config[:top_p] || 1.0),
-      presence_penalty: Map.get(opts, :presence_penalty, baseten_config[:presence_penalty] || 0),
-      frequency_penalty: Map.get(opts, :frequency_penalty, baseten_config[:frequency_penalty] || 0),
-      stop: Map.get(opts, :stop, baseten_config[:stop] || [])
+      temperature: Map.get(opts, :temperature, together_config[:temperature] || 0.7),
+      max_tokens: Map.get(opts, :max_tokens, together_config[:max_tokens] || 512),
+      top_p: Map.get(opts, :top_p, together_config[:top_p] || 0.7),
+      stop: Map.get(opts, :stop, together_config[:stop] || [])
     }
 
     # Add tools if provided
@@ -47,6 +45,12 @@ defmodule Dantex.Providers.Baseten do
     else
       Map.put(payload, :tools, format_tools(tools))
     end
+
+    # Add Together-specific parameters if configured
+    payload = 
+      payload
+      |> maybe_add_safety_model(together_config)
+      |> maybe_add_stream(opts, together_config)
 
     # Make HTTP request
     headers = [
@@ -67,7 +71,7 @@ defmodule Dantex.Providers.Baseten do
         parse_error_response(status_code, body)
 
       {:error, %HTTPoison.Error{reason: reason}} ->
-        {:error, "Baseten HTTP Error: #{inspect(reason)}"}
+        {:error, "Together AI HTTP Error: #{inspect(reason)}"}
     end
   end
 
@@ -95,6 +99,18 @@ defmodule Dantex.Providers.Baseten do
     end)
   end
 
+  defp maybe_add_safety_model(payload, config) do
+    case config[:safety_model] do
+      nil -> payload
+      safety_model -> Map.put(payload, :safety_model, safety_model)
+    end
+  end
+
+  defp maybe_add_stream(payload, opts, config) do
+    stream = Map.get(opts, :stream, config[:stream] || false)
+    Map.put(payload, :stream, stream)
+  end
+
   defp parse_success_response(body) do
     case Jason.decode(body) do
       {:ok, %{"choices" => choices, "usage" => usage}} ->
@@ -103,26 +119,26 @@ defmodule Dantex.Providers.Baseten do
         {:ok, messages, formatted_usage}
 
       {:ok, _} ->
-        {:error, "Baseten Error: Invalid response format"}
+        {:error, "Together AI Error: Invalid response format"}
 
       {:error, _} ->
-        {:error, "Baseten Error: Failed to parse JSON response"}
+        {:error, "Together AI Error: Failed to parse JSON response"}
     end
   end
 
   defp parse_rate_limit_response(body) do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
-        {:rate_limit, "Baseten rate limit: #{message}"}
+        {:rate_limit, "Together AI rate limit: #{message}"}
       
       {:ok, %{"message" => message}} ->
-        {:rate_limit, "Baseten rate limit: #{message}"}
+        {:rate_limit, "Together AI rate limit: #{message}"}
       
       {:error, _} ->
-        # Handle raw string responses like "Rate limit exceeded"
+        # Handle raw string responses
         case String.trim(body) do
-          "" -> {:rate_limit, "Baseten rate limit exceeded"}
-          msg -> {:rate_limit, "Baseten rate limit: #{msg}"}
+          "" -> {:rate_limit, "Together AI rate limit exceeded"}
+          msg -> {:rate_limit, "Together AI rate limit: #{msg}"}
         end
     end
   end
@@ -130,16 +146,16 @@ defmodule Dantex.Providers.Baseten do
   defp parse_error_response(status_code, body) do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
-        {:error, "Baseten Error (#{status_code}): #{message}"}
+        {:error, "Together AI Error (#{status_code}): #{message}"}
       
       {:ok, %{"message" => message}} ->
-        {:error, "Baseten Error (#{status_code}): #{message}"}
+        {:error, "Together AI Error (#{status_code}): #{message}"}
       
       {:error, _} ->
         # Handle raw string responses
         case String.trim(body) do
-          "" -> {:error, "Baseten Error (#{status_code}): Unknown error"}
-          msg -> {:error, "Baseten Error (#{status_code}): #{msg}"}
+          "" -> {:error, "Together AI Error (#{status_code}): Unknown error"}
+          msg -> {:error, "Together AI Error (#{status_code}): #{msg}"}
         end
     end
   end
@@ -173,7 +189,7 @@ defmodule Dantex.Providers.Baseten do
         } ->
           # Handle case where tool_calls field exists but contains invalid data
           Logger.warning(
-            "Baseten returned invalid tool_calls format: #{inspect(invalid_tool_calls)}"
+            "Together AI returned invalid tool_calls format: #{inspect(invalid_tool_calls)}"
           )
 
           %Message{role: role, content: content, tool_calls: nil}
@@ -183,17 +199,17 @@ defmodule Dantex.Providers.Baseten do
           %Message{role: role, content: content, tool_calls: nil}
 
         unexpected ->
-          Logger.error("Unexpected Baseten message format: #{inspect(unexpected)}")
+          Logger.error("Unexpected Together AI message format: #{inspect(unexpected)}")
           %Message{role: "assistant", content: "Error parsing response", tool_calls: nil}
       end
     end)
   end
 
-  defp get_baseten_config do
+  defp get_together_config do
     case Application.get_env(:dantex, :providers) do
       nil -> []
-      providers when is_list(providers) -> Keyword.get(providers, :baseten, [])
-      providers when is_map(providers) -> Map.get(providers, :baseten, %{}) |> Map.to_list()
+      providers when is_list(providers) -> Keyword.get(providers, :together, [])
+      providers when is_map(providers) -> Map.get(providers, :together, %{}) |> Map.to_list()
     end
   end
 end
