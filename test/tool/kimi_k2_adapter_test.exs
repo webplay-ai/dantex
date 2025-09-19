@@ -115,6 +115,76 @@ defmodule Dantex.Tool.KimiK2AdapterTest do
       # OpenAI-style IDs don't match the strict Kimi K2 regex, so no tool calls are extracted
       assert result.tool_calls == []
     end
+
+    test "reproduces the bug with mixed format - OpenAI style ID being used as function name" do
+      # This reproduces the exact bug reported: LLM uses OpenAI-style tool call ID as function name
+      content = """
+      I'll help with that.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>call_g984eya7rrq3zfn6ty68nh50<|tool_call_argument_begin|>{"messages":[{"content":"What are your capabilities? What can you help me with?","role":"user"}]}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+      # Currently this would result in empty tool_calls, but ideally we want to handle this gracefully
+      # The problem is that `call_g984eya7rrq3zfn6ty68nh50` doesn't match the `functions.tool_name:index` pattern
+      assert result.tool_calls == []
+    end
+
+    test "debug - check what the current regex actually matches" do
+      # Let's test different patterns to understand the current behavior
+      func_call_pattern = ~r/<\|tool_call_begin\|>\s*(?<tool_call_id>[\w\.]+:\d+)\s*<\|tool_call_argument_begin\|>\s*(?<function_arguments>.*?)\s*<\|tool_call_end\|>/s
+
+      # Test the expected pattern - should match
+      good_content = "<|tool_call_begin|>functions.send_messages:0<|tool_call_argument_begin|>{\"test\": \"value\"}<|tool_call_end|>"
+      good_matches = Regex.scan(func_call_pattern, good_content, capture: :all_names)
+      assert length(good_matches) == 1
+
+      # Test the problematic pattern - should NOT match
+      bad_content = "<|tool_call_begin|>call_g984eya7rrq3zfn6ty68nh50<|tool_call_argument_begin|>{\"test\": \"value\"}<|tool_call_end|>"
+      bad_matches = Regex.scan(func_call_pattern, bad_content, capture: :all_names)
+      assert length(bad_matches) == 0
+
+      # This confirms that OpenAI-style IDs do not match the current regex pattern
+    end
+
+    test "debug - what if LLM outputs malformed Kimi K2 with OpenAI-style function name" do
+      # What if the LLM somehow generates this malformed pattern?
+      # Using the previous tool_call_id as the new function identifier
+      content = """
+      I'll help with that.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>call_g984eya7rrq3zfn6ty68nh50:0<|tool_call_argument_begin|>{"messages":[{"content":"What are your capabilities?","role":"user"}]}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      # This should match the regex since it has the `:0` suffix
+      # Let's see what function name gets extracted
+      assert length(result.tool_calls) == 1
+      [tool_call] = result.tool_calls
+
+      # The function name extraction logic:
+      # tool_call_id = "call_g984eya7rrq3zfn6ty68nh50:0"
+      # String.split(".") -> ["call_g984eya7rrq3zfn6ty68nh50:0"]
+      # Enum.at(1, "") -> "" (no second element after split)
+      # String.split(":") on "" -> [""]
+      # Enum.at(0, "") -> ""
+
+      # So function name should be empty string, not the tool call ID
+      assert tool_call.function.name == ""
+      assert tool_call.id == "call_g984eya7rrq3zfn6ty68nh50:0"
+    end
   end
 
   describe "agent integration" do

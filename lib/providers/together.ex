@@ -162,7 +162,8 @@ defmodule Dantex.Providers.Together do
     end
   end
 
-  defp parse_choices(choices) do
+  # Make public for testing
+  def parse_choices(choices) do
     choices
     |> Enum.map(fn choice ->
       case choice do
@@ -170,12 +171,15 @@ defmodule Dantex.Providers.Together do
         when is_list(tool_calls) ->
           formatted_tool_calls =
             Enum.map(tool_calls, fn tool_call ->
+              # Handle potential missing fields gracefully
+              function_data = tool_call["function"] || %{}
+
               %{
-                id: tool_call["id"],
-                type: tool_call["type"],
+                id: tool_call["id"] || generate_tool_call_id(),
+                type: tool_call["type"] || "function",
                 function: %{
-                  name: tool_call["function"]["name"],
-                  arguments: tool_call["function"]["arguments"]
+                  name: function_data["name"] || "unknown_function",
+                  arguments: function_data["arguments"] || "{}"
                 }
               }
             end)
@@ -196,6 +200,22 @@ defmodule Dantex.Providers.Together do
 
           %Message{role: role, content: content, tool_calls: nil}
 
+        %{"message" => %{"role" => role, "content" => content, "function_call" => function_call}}
+        when not is_nil(function_call) ->
+          # Handle legacy function_call format (single function call)
+          formatted_tool_calls = [
+            %{
+              id: generate_tool_call_id(),
+              type: "function",
+              function: %{
+                name: function_call["name"] || "unknown_function",
+                arguments: function_call["arguments"] || "{}"
+              }
+            }
+          ]
+
+          %Message{role: role, content: content, tool_calls: formatted_tool_calls}
+
         %{"message" => %{"role" => role, "content" => content}} ->
           # Normal text response without tool_calls
           %Message{role: role, content: content, tool_calls: nil}
@@ -213,5 +233,10 @@ defmodule Dantex.Providers.Together do
       providers when is_list(providers) -> Keyword.get(providers, :together, [])
       providers when is_map(providers) -> Map.get(providers, :together, %{}) |> Map.to_list()
     end
+  end
+
+  # Generate a unique tool call ID for legacy function_call format
+  defp generate_tool_call_id do
+    "call_" <> Base.encode16(:crypto.strong_rand_bytes(12), case: :lower)
   end
 end
