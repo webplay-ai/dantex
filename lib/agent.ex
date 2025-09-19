@@ -238,7 +238,8 @@ defmodule Dantex.Agent do
           max_failed_retries: non_neg_integer() | nil,
           tool_adapter: module(),
           context: map(),
-          sub_agents: %{String.t() => t()}
+          sub_agents: %{String.t() => t()},
+          timeout: non_neg_integer() | nil
         }
 
   defstruct [
@@ -249,7 +250,8 @@ defmodule Dantex.Agent do
     :max_failed_retries,
     :tool_adapter,
     :context,
-    :sub_agents
+    :sub_agents,
+    :timeout
   ]
 
   @doc """
@@ -265,6 +267,7 @@ defmodule Dantex.Agent do
     * `:max_failed_retries` - The maximum number of failed retries for a tool call with the same arguments (optional, default: nil)
     * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter - uses OpenAI function calling spec)
     * `:context` - Map of context data passed to tools (default: %{})
+    * `:timeout` - Request timeout in milliseconds (optional, uses provider defaults if not specified)
 
   ## Example
 
@@ -279,7 +282,8 @@ defmodule Dantex.Agent do
         },
         max_failed_retries: 3,
         tool_adapter: OpenAIAdapter,
-        context: %{weather_api_key: "your_key", user_id: 123}
+        context: %{weather_api_key: "your_key", user_id: 123},
+        timeout: 60_000  # 60 seconds
       )
   """
   require Logger
@@ -295,6 +299,7 @@ defmodule Dantex.Agent do
           | {:context, map()}
           | {:max_failed_retries, non_neg_integer()}
           | {:tool_adapter, ToolAdapter.t()}
+          | {:timeout, non_neg_integer()}
         ]) ::
           t()
   def new(opts) do
@@ -309,6 +314,7 @@ defmodule Dantex.Agent do
     max_failed_retries = Keyword.get(opts, :max_failed_retries, 0)
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
     context = Keyword.get(opts, :context, %{})
+    timeout = Keyword.get(opts, :timeout, nil)
 
     # Generate agent ID if not provided
     context_with_id =
@@ -332,7 +338,8 @@ defmodule Dantex.Agent do
       max_failed_retries: max_failed_retries,
       tool_adapter: tool_adapter,
       context: context_with_id,
-      sub_agents: sub_agents
+      sub_agents: sub_agents,
+      timeout: timeout
     }
   end
 
@@ -588,7 +595,7 @@ defmodule Dantex.Agent do
   @spec chat_completion(t(), list(Message.t())) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, term()}
   defp(chat_completion(agent, messages)) do
-    Model.chat_completion(agent.model, messages, agent.tools)
+    Model.chat_completion(agent.model, messages, agent.tools, agent.timeout)
   end
 
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [{Message.t(), any()}]

@@ -17,14 +17,15 @@ defmodule Dantex.Providers.Baseten do
           | {:rate_limit, String.t()}
   def chat_completion(opts) when is_map(opts) do
     baseten_config = get_baseten_config()
-    
+
     unless baseten_config[:api_key] do
       {:error, "Baseten API key not configured"}
     end
-    
+
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
+    timeout = Map.get(opts, :timeout, 180_000)
 
     api_key = baseten_config[:api_key]
     base_url = baseten_config[:base_url] || "https://inference.baseten.co"
@@ -56,7 +57,7 @@ defmodule Dantex.Providers.Baseten do
 
     url = "#{base_url}/v1/chat/completions"
 
-    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout: 180_000) do
+    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout: timeout) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         parse_success_response(body)
 

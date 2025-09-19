@@ -47,6 +47,7 @@ defmodule Dantex.Providers.Ollama do
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
+    timeout = Map.get(opts, :timeout)
     
     unless model in @supported_models do
       {:error, "Invalid model"}
@@ -60,11 +61,18 @@ defmodule Dantex.Providers.Ollama do
 
     try do
       # Add comprehensive timeout settings (all in milliseconds)
-      timeout_options = [
-        timeout: 30_000,         # Overall request timeout (default: 5000)
-        recv_timeout: 60_000,    # Response receiving timeout (default: 5000)
-        connect_timeout: 10_000  # Connection establishment timeout (default: 8000)
-      ]
+      timeout_options = case timeout do
+        nil -> [
+          timeout: 30_000,         # Overall request timeout (default: 5000)
+          recv_timeout: 60_000,    # Response receiving timeout (default: 5000)
+          connect_timeout: 10_000  # Connection establishment timeout (default: 8000)
+        ]
+        custom_timeout -> [
+          timeout: custom_timeout,
+          recv_timeout: custom_timeout + 30_000,
+          connect_timeout: 10_000
+        ]
+      end
 
       {:ok, %{status_code: status_code, body: body}} =
         HTTPoison.post(url, body, headers, timeout_options)

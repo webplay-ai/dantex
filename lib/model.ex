@@ -84,12 +84,19 @@ defmodule Dantex.Model do
   """
   @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t())) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
-  def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools)
+  def chat_completion(%__MODULE__{} = model, messages, tools) do
+    chat_completion(model, messages, tools, nil)
+  end
+
+  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t()), non_neg_integer() | nil) ::
+          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
+  def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools, timeout)
       when not is_nil(provider) do
     opts = %{
       model: model,
       messages: messages,
-      tools: tools
+      tools: tools,
+      timeout: timeout
     }
 
     case provider.chat_completion(opts) do
@@ -102,7 +109,7 @@ defmodule Dantex.Model do
     end
   end
 
-  def chat_completion(%__MODULE__{provider: nil}, _messages) do
+  def chat_completion(%__MODULE__{provider: nil}, _messages, _tools, _timeout) do
     {:error, :no_provider_configured}
   end
 end

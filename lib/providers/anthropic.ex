@@ -29,6 +29,7 @@ defmodule Dantex.Providers.Anthropic do
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
+    timeout = Map.get(opts, :timeout)
     
     unless model in @supported_models do
       {:error, "Invalid model"}
@@ -51,11 +52,18 @@ defmodule Dantex.Providers.Anthropic do
     body = build_request_body(model, messages, tools)
 
     try do
-      timeout_options = [
-        timeout: 60_000,         # Overall request timeout
-        recv_timeout: 120_000,   # Response receiving timeout
-        connect_timeout: 10_000  # Connection establishment timeout
-      ]
+      timeout_options = case timeout do
+        nil -> [
+          timeout: 60_000,         # Overall request timeout
+          recv_timeout: 120_000,   # Response receiving timeout
+          connect_timeout: 10_000  # Connection establishment timeout
+        ]
+        custom_timeout -> [
+          timeout: custom_timeout,
+          recv_timeout: custom_timeout + 60_000,
+          connect_timeout: 10_000
+        ]
+      end
 
       {:ok, %{status_code: status_code, body: response_body}} =
         HTTPoison.post(url, body, headers, timeout_options)

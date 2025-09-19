@@ -20,6 +20,7 @@ defmodule Dantex.Providers.OpenAI do
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
+    timeout = Map.get(opts, :timeout, 180_000)
 
     api_key = Map.get(opts, :api_key) || Dantex.Providers.Config.get_api_key(:openai)
 
@@ -29,12 +30,12 @@ defmodule Dantex.Providers.OpenAI do
     cfg =
       case base_url do
         nil ->
-          OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(180_000)
+          OpenaiEx.new(api_key) |> OpenaiEx.with_receive_timeout(timeout)
 
         custom_url ->
           OpenaiEx.new(api_key)
           |> OpenaiEx.with_base_url(custom_url)
-          |> OpenaiEx.with_receive_timeout(180_000)
+          |> OpenaiEx.with_receive_timeout(timeout)
       end
 
     base_params = [

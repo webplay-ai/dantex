@@ -25,6 +25,7 @@ defmodule Dantex.Providers.Together do
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
+    timeout = Map.get(opts, :timeout, 180_000)
 
     api_key = together_config[:api_key]
     base_url = together_config[:base_url] || "https://api.together.xyz"
@@ -60,7 +61,7 @@ defmodule Dantex.Providers.Together do
 
     url = "#{base_url}/v1/chat/completions"
 
-    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout: 180_000) do
+    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout: timeout) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         parse_success_response(body)
 
