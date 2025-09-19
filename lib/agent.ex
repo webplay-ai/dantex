@@ -335,7 +335,11 @@ defmodule Dantex.Agent do
   end
 
   @doc """
-  Checks if the agent's last message contains tool calls that need to be executed.
+  Checks if the agent has pending tool calls that need to be executed.
+
+  This function checks if the last message is a tool result and the second-to-last
+  message is an assistant message, which indicates tool calls have been executed
+  and we should continue the conversation loop.
 
   ## Example
 
@@ -345,9 +349,18 @@ defmodule Dantex.Agent do
       end
   """
   @spec has_tool_calls?(t()) :: boolean()
-  def has_tool_calls?(%__MODULE__{messages: messages}) when length(messages) > 0 do
+  def has_tool_calls?(%__MODULE__{messages: messages}) when length(messages) >= 2 do
     last_message = List.last(messages)
-    message_has_tool_calls?(last_message)
+    second_to_last = Enum.at(messages, -2)
+
+    case {last_message.role, second_to_last.role} do
+      {"tool", "assistant"} -> true
+      _ -> message_has_tool_calls?(last_message)
+    end
+  end
+
+  def has_tool_calls?(%__MODULE__{messages: [message]}) do
+    message_has_tool_calls?(message)
   end
 
   def has_tool_calls?(%__MODULE__{}), do: false
