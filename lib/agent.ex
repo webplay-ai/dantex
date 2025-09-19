@@ -359,9 +359,58 @@ defmodule Dantex.Agent do
   @doc """
   Checks if the agent has pending tool calls that need to be executed.
 
-  This function checks if the last message is a tool result and the second-to-last
-  message is an assistant message, which indicates tool calls have been executed
-  and we should continue the conversation loop.
+  Returns true when the last message is an assistant message with tool_calls
+  that haven't been executed yet.
+
+  ## Example
+
+      agent = Agent.step(agent)
+      if Agent.has_pending_tool_calls?(agent) do
+        agent = Agent.execute_tools(agent)
+      end
+  """
+  @spec has_pending_tool_calls?(t()) :: boolean()
+  def has_pending_tool_calls?(%__MODULE__{messages: messages}) when length(messages) > 0 do
+    case List.last(messages) do
+      %{role: "assistant"} = last_message -> message_has_tool_calls?(last_message)
+      _ -> false
+    end
+  end
+
+  def has_pending_tool_calls?(%__MODULE__{}), do: false
+
+  @doc """
+  Checks if the agent has completed tool calls that should continue the conversation.
+
+  Returns true when we have tool result messages following an assistant message,
+  indicating tools have been executed and the conversation should continue.
+
+  ## Example
+
+      if Agent.has_completed_tool_calls?(agent) do
+        # Continue conversation loop
+        Agent.step(agent)
+      end
+  """
+  @spec has_completed_tool_calls?(t()) :: boolean()
+  def has_completed_tool_calls?(%__MODULE__{messages: messages}) when length(messages) >= 2 do
+    last_message = List.last(messages)
+    second_to_last = Enum.at(messages, -2)
+
+    case {last_message, second_to_last} do
+      {%{role: "tool"}, %{role: "assistant"}} -> true
+      _ -> false
+    end
+  end
+
+  def has_completed_tool_calls?(%__MODULE__{}), do: false
+
+  @doc """
+  Checks if the agent has tool calls in any state (pending or completed).
+
+  Returns true when either:
+  - There are pending tool calls that need execution
+  - There are completed tool calls that should continue the conversation
 
   ## Example
 
@@ -371,21 +420,9 @@ defmodule Dantex.Agent do
       end
   """
   @spec has_tool_calls?(t()) :: boolean()
-  def has_tool_calls?(%__MODULE__{messages: messages}) when length(messages) >= 2 do
-    last_message = List.last(messages)
-    second_to_last = Enum.at(messages, -2)
-
-    case {last_message.role, second_to_last.role} do
-      {"tool", "assistant"} -> true
-      _ -> message_has_tool_calls?(last_message)
-    end
+  def has_tool_calls?(%__MODULE__{} = agent) do
+    has_pending_tool_calls?(agent) or has_completed_tool_calls?(agent)
   end
-
-  def has_tool_calls?(%__MODULE__{messages: [message]}) do
-    message_has_tool_calls?(message)
-  end
-
-  def has_tool_calls?(%__MODULE__{}), do: false
 
   @doc """
   Executes any pending tool calls from the last message and adds the results to the conversation.
