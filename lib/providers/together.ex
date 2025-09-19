@@ -17,18 +17,18 @@ defmodule Dantex.Providers.Together do
           | {:rate_limit, String.t()}
   def chat_completion(opts) when is_map(opts) do
     together_config = get_together_config()
-    
+
     unless together_config[:api_key] do
       {:error, "Together AI API key not configured"}
     end
-    
+
     model = Map.get(opts, :model)
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
 
     api_key = together_config[:api_key]
     base_url = together_config[:base_url] || "https://api.together.xyz"
-    
+
     # Build request payload
     payload = %{
       model: model,
@@ -47,7 +47,7 @@ defmodule Dantex.Providers.Together do
     end
 
     # Add Together-specific parameters if configured
-    payload = 
+    payload =
       payload
       |> maybe_add_safety_model(together_config)
       |> maybe_add_stream(opts, together_config)
@@ -125,6 +125,7 @@ defmodule Dantex.Providers.Together do
         {:error, "Together AI Error: Failed to parse JSON response"}
     end
   end
+
 
   defp parse_rate_limit_response(body) do
     case Jason.decode(body) do

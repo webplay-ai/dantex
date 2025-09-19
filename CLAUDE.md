@@ -34,6 +34,36 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 - Model configuration and chat completion handling
 - Provider-specific authentication and API handling
 
+### Tool Adapters (`lib/tool/`)
+
+Tool adapters allow you to parse custom tool call formats from different models. By default, agents use the OpenAI function calling format, but some models (like Kimi K2) use custom formats that require special parsing.
+
+#### Using Kimi K2 Tool Adapter for Together AI
+
+For models that output tool calls in Kimi K2 format (e.g., `meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo`), use the `KimiK2Adapter`:
+
+```elixir
+agent = Agent.new(
+  provider: :together,
+  model: "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+  messages: [Message.system("You are a helpful assistant.")],
+  tools: [MyCustomTool],
+  tool_adapter: Dantex.Tool.KimiK2Adapter  # Parse Kimi K2 tool call format
+)
+```
+
+The Kimi K2 adapter parses the special format:
+```
+<|tool_calls_section_begin|>
+<|tool_call_begin|>functions.function_name:0<|tool_call_argument_begin|>{"arg": "value"}<|tool_call_end|>
+<|tool_calls_section_end|>
+```
+
+#### Available Tool Adapters
+
+- `Dantex.Tool.OpenAIAdapter` (default) - Standard OpenAI function calling format
+- `Dantex.Tool.KimiK2Adapter` - Kimi K2 custom tool call format for Together AI models
+
 ## Common Development Tasks
 
 ### Running Tests

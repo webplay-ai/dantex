@@ -1,0 +1,168 @@
+defmodule Dantex.Tool.KimiK2AdapterTest do
+  use ExUnit.Case, async: true
+
+  alias Dantex.Message
+  alias Dantex.Tool.KimiK2Adapter
+
+  describe "extract_tool_calls/1" do
+    test "extracts single tool call from Kimi K2 format" do
+      content = """
+      I'll help you check the weather in Beijing today.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{"location": "Beijing", "unit": "celsius"}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+
+      assert [tool_call] = result.tool_calls
+      assert tool_call.id == "functions.get_weather:0"
+      assert tool_call.type == "function"
+      assert tool_call.function.name == "get_weather"
+      assert tool_call.function.arguments == ~s|{"location": "Beijing", "unit": "celsius"}|
+    end
+
+    test "extracts multiple tool calls from Kimi K2 format" do
+      content = """
+      I'll get the weather and then check your calendar.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{"location": "Beijing", "unit": "celsius"}<|tool_call_end|>
+      <|tool_call_begin|>functions.check_calendar:1<|tool_call_argument_begin|>{"date": "2025-01-15"}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+
+      assert [tool_call1, tool_call2] = result.tool_calls
+
+      assert tool_call1.id == "functions.get_weather:0"
+      assert tool_call1.type == "function"
+      assert tool_call1.function.name == "get_weather"
+      assert tool_call1.function.arguments == ~s|{"location": "Beijing", "unit": "celsius"}|
+
+      assert tool_call2.id == "functions.check_calendar:1"
+      assert tool_call2.type == "function"
+      assert tool_call2.function.name == "check_calendar"
+      assert tool_call2.function.arguments == ~s|{"date": "2025-01-15"}|
+    end
+
+    test "returns empty tool_calls for content without tool calls" do
+      content = "The weather in Beijing today is sunny with a temperature of 25°C."
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+      assert result.tool_calls == []
+    end
+
+    test "handles message with nil content" do
+      message = %Message{role: "assistant", content: nil, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == nil
+      assert result.tool_calls == nil
+    end
+
+    test "handles malformed tool call sections gracefully" do
+      content = """
+      This has incomplete tool call markers.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{"location": "Beijing"}
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+      assert result.tool_calls == []
+    end
+  end
+
+  describe "agent integration" do
+    test "Kimi K2 adapter processes messages in agent workflow" do
+      # This test demonstrates that the adapter would be called automatically
+      # when the agent processes messages that contain Kimi K2 tool call format
+
+      content = """
+      I'll help you with that task.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>functions.calculate:0<|tool_call_argument_begin|>{"operation": "add", "a": 5, "b": 3}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      # Simulate what the agent would do - extract tool calls using the adapter
+      {:ok, processed_message} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert processed_message.role == "assistant"
+      assert processed_message.content == content
+      assert length(processed_message.tool_calls) == 1
+
+      [tool_call] = processed_message.tool_calls
+      assert tool_call.id == "functions.calculate:0"
+      assert tool_call.function.name == "calculate"
+      assert tool_call.function.arguments == ~s|{"operation": "add", "a": 5, "b": 3}|
+    end
+
+    test "Kimi K2 adapter processes multiple tool calls in single response" do
+      # Test demonstrates parsing multiple tool calls from a single agent response
+      content = """
+      I'll help you with both tasks. Let me get the weather and then check your calendar.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{"location": "San Francisco", "unit": "fahrenheit"}<|tool_call_end|>
+      <|tool_call_begin|>functions.check_calendar:1<|tool_call_argument_begin|>{"date": "2025-01-20", "type": "appointments"}<|tool_call_end|>
+      <|tool_call_begin|>functions.send_notification:2<|tool_call_argument_begin|>{"message": "Tasks completed", "priority": "low"}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      # Simulate agent processing with KimiK2Adapter
+      {:ok, processed_message} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert processed_message.role == "assistant"
+      assert processed_message.content == content
+      assert length(processed_message.tool_calls) == 3
+
+      [weather_call, calendar_call, notification_call] = processed_message.tool_calls
+
+      # Verify first tool call
+      assert weather_call.id == "functions.get_weather:0"
+      assert weather_call.function.name == "get_weather"
+      assert weather_call.function.arguments == ~s|{"location": "San Francisco", "unit": "fahrenheit"}|
+
+      # Verify second tool call
+      assert calendar_call.id == "functions.check_calendar:1"
+      assert calendar_call.function.name == "check_calendar"
+      assert calendar_call.function.arguments == ~s|{"date": "2025-01-20", "type": "appointments"}|
+
+      # Verify third tool call
+      assert notification_call.id == "functions.send_notification:2"
+      assert notification_call.function.name == "send_notification"
+      assert notification_call.function.arguments == ~s|{"message": "Tasks completed", "priority": "low"}|
+    end
+  end
+end

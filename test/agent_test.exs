@@ -258,20 +258,26 @@ defmodule Dantex.AgentTest do
         %{id: "call_1", function: %{name: "test_tool", arguments: "{}"}},
         %{id: "call_2", function: %{name: "other_tool", arguments: "{}"}}
       ]
-      
+
       message = %Message{
         role: "assistant",
         content: "I'll use some tools",
         tool_calls: tool_calls
       }
-      
+
       telemetry_data = Message.to_telemetry(message)
+
+      # Expected telemetry format flattens the tool calls structure
+      expected_telemetry_tool_calls = [
+        %{id: "call_1", name: "test_tool", arguments: %{}},
+        %{id: "call_2", name: "other_tool", arguments: %{}}
+      ]
 
       assert telemetry_data.role == "assistant"
       assert telemetry_data.content == "I'll use some tools"
       assert telemetry_data.has_tool_calls == true
       assert telemetry_data.tool_calls_count == 2
-      assert telemetry_data.tool_calls == tool_calls
+      assert telemetry_data.tool_calls == expected_telemetry_tool_calls
       assert telemetry_data.tool_call_id == nil
     end
   end
