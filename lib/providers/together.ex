@@ -41,11 +41,12 @@ defmodule Dantex.Providers.Together do
     }
 
     # Add tools if provided
-    payload = if Enum.empty?(tools) do
-      payload
-    else
-      Map.put(payload, :tools, format_tools(tools))
-    end
+    payload =
+      if Enum.empty?(tools) do
+        payload
+      else
+        Map.put(payload, :tools, format_tools(tools))
+      end
 
     # Add Together-specific parameters if configured
     payload =
@@ -114,8 +115,7 @@ defmodule Dantex.Providers.Together do
 
   defp parse_success_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"choices" => choices, "usage" => usage} = res} ->
-        IO.inspect(res, label: "Together Response")
+      {:ok, %{"choices" => choices, "usage" => usage}} ->
         messages = parse_choices(choices)
         formatted_usage = %{total_tokens: usage["total_tokens"]}
         {:ok, messages, formatted_usage}
@@ -127,7 +127,6 @@ defmodule Dantex.Providers.Together do
         {:error, "Together AI Error: Failed to parse JSON response"}
     end
   end
-
 
   defp parse_rate_limit_response(body) do
     case Jason.decode(body) do
