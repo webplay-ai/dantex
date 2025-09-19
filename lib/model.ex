@@ -53,6 +53,7 @@ defmodule Dantex.Model do
       :openai -> Dantex.Providers.OpenAI
       :ollama -> Dantex.Providers.Ollama
       :gemini -> Dantex.Providers.Gemini
+      :moonshot -> Dantex.Providers.Moonshot
       :together -> Dantex.Providers.Together
       :anthropic -> Dantex.Providers.Anthropic
       :baseten -> Dantex.Providers.Baseten
