@@ -1,7 +1,7 @@
 defmodule Dantex.Providers.Baseten do
   @moduledoc """
   Baseten provider implementation for chat completions.
-  
+
   Direct HTTP implementation for Baseten's OpenAI-compatible API endpoints
   with custom error handling and response parsing.
   """
@@ -29,7 +29,7 @@ defmodule Dantex.Providers.Baseten do
 
     api_key = baseten_config[:api_key]
     base_url = baseten_config[:base_url] || "https://inference.baseten.co"
-    
+
     # Build request payload
     payload = %{
       model: model,
@@ -38,20 +38,22 @@ defmodule Dantex.Providers.Baseten do
       max_tokens: Map.get(opts, :max_tokens, baseten_config[:max_tokens] || 8000),
       top_p: Map.get(opts, :top_p, baseten_config[:top_p] || 1.0),
       presence_penalty: Map.get(opts, :presence_penalty, baseten_config[:presence_penalty] || 0),
-      frequency_penalty: Map.get(opts, :frequency_penalty, baseten_config[:frequency_penalty] || 0),
+      frequency_penalty:
+        Map.get(opts, :frequency_penalty, baseten_config[:frequency_penalty] || 0),
       stop: Map.get(opts, :stop, baseten_config[:stop] || [])
     }
 
     # Add tools if provided
-    payload = if Enum.empty?(tools) do
-      payload
-    else
-      Map.put(payload, :tools, format_tools(tools))
-    end
+    payload =
+      if Enum.empty?(tools) do
+        payload
+      else
+        Map.put(payload, :tools, format_tools(tools))
+      end
 
     # Make HTTP request
     headers = [
-      {"Authorization", "Bearer #{api_key}"},
+      {"Authorization", "Api-Key #{api_key}"},
       {"Content-Type", "application/json"}
     ]
 
@@ -115,10 +117,10 @@ defmodule Dantex.Providers.Baseten do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
         {:rate_limit, "Baseten rate limit: #{message}"}
-      
+
       {:ok, %{"message" => message}} ->
         {:rate_limit, "Baseten rate limit: #{message}"}
-      
+
       {:error, _} ->
         # Handle raw string responses like "Rate limit exceeded"
         case String.trim(body) do
@@ -132,10 +134,10 @@ defmodule Dantex.Providers.Baseten do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
         {:error, "Baseten Error (#{status_code}): #{message}"}
-      
+
       {:ok, %{"message" => message}} ->
         {:error, "Baseten Error (#{status_code}): #{message}"}
-      
+
       {:error, _} ->
         # Handle raw string responses
         case String.trim(body) do
@@ -198,3 +200,4 @@ defmodule Dantex.Providers.Baseten do
     end
   end
 end
+
