@@ -96,6 +96,25 @@ defmodule Dantex.Tool.KimiK2AdapterTest do
       assert result.content == content
       assert result.tool_calls == []
     end
+
+    test "rejects OpenAI-style tool call IDs that don't follow Kimi K2 spec" do
+      content = """
+      This uses OpenAI-style IDs instead of Kimi K2 format.
+
+      <|tool_calls_section_begin|>
+      <|tool_call_begin|>call_fm453ztn8q6prph3igmryixt<|tool_call_argument_begin|>{"messages": [{"role": "user", "content": "test"}]}<|tool_call_end|>
+      <|tool_calls_section_end|>
+      """
+
+      message = %Message{role: "assistant", content: content, tool_calls: nil}
+
+      {:ok, result} = KimiK2Adapter.extract_tool_calls(message)
+
+      assert result.role == "assistant"
+      assert result.content == content
+      # OpenAI-style IDs don't match the strict Kimi K2 regex, so no tool calls are extracted
+      assert result.tool_calls == []
+    end
   end
 
   describe "agent integration" do

@@ -1,5 +1,6 @@
 
 ## TODO 
+- [ ] count tokens used - so we can manage token windows. 
 - [ ] add support to define multiple tools in a single module?
 - [ ] Add output schema support for the agent
 - [ ] Add options to limit tokens used, number of messages or number of tool calls. default off
