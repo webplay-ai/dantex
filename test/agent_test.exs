@@ -281,4 +281,108 @@ defmodule Dantex.AgentTest do
       assert telemetry_data.tool_call_id == nil
     end
   end
+
+  describe "agentic loop methods" do
+    test "add_message/2 adds message to conversation" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [Message.system("You are helpful")]
+      )
+
+      assert length(Agent.get_messages(agent)) == 1
+
+      agent = Agent.add_message(agent, Message.user("Hello"))
+      messages = Agent.get_messages(agent)
+
+      assert length(messages) == 2
+      assert List.last(messages).role == "user"
+      assert List.last(messages).content == "Hello"
+    end
+
+    test "get_messages/1 returns conversation history" do
+      messages = [
+        Message.system("You are helpful"),
+        Message.user("Hello"),
+        Message.assistant("Hi there!")
+      ]
+
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: messages
+      )
+
+      retrieved_messages = Agent.get_messages(agent)
+      assert retrieved_messages == messages
+      assert length(retrieved_messages) == 3
+    end
+
+    test "has_tool_calls?/1 returns false when no messages" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: []
+      )
+
+      refute Agent.has_tool_calls?(agent)
+    end
+
+    test "has_tool_calls?/1 returns false when last message has no tool calls" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [
+          Message.system("You are helpful"),
+          Message.user("Hello"),
+          Message.assistant("Hi there!")
+        ]
+      )
+
+      refute Agent.has_tool_calls?(agent)
+    end
+
+    test "has_tool_calls?/1 returns true when last message has tool calls" do
+      tool_calls = [
+        %{id: "call_1", function: %{name: "test_tool", arguments: "{}"}}
+      ]
+
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [
+          Message.system("You are helpful"),
+          %Message{role: "assistant", content: "Using a tool", tool_calls: tool_calls}
+        ]
+      )
+
+      assert Agent.has_tool_calls?(agent)
+    end
+
+    test "execute_tools/1 returns agent unchanged when no tool calls" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: [
+          Message.system("You are helpful"),
+          Message.assistant("Hello")
+        ]
+      )
+
+      result_agent = Agent.execute_tools(agent)
+      assert result_agent == agent
+      assert length(Agent.get_messages(result_agent)) == 2
+    end
+
+    test "execute_tools/1 returns agent unchanged when no messages" do
+      agent = Agent.new(
+        provider: :openai,
+        model: "gpt-4o-mini",
+        messages: []
+      )
+
+      result_agent = Agent.execute_tools(agent)
+      assert result_agent == agent
+    end
+  end
 end

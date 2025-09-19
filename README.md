@@ -158,4 +158,33 @@ defmodule SimpleWeatherTool do
 end
 ```
 
+## Custom Agentic Loops
+
+Build your own conversation loops with full control:
+
+```elixir
+# Basic manual loop
+agent = Agent.add_message(agent, Message.user("Hello"))
+
+{:ok, response, agent} = Agent.step(agent)
+if Agent.has_tool_calls?(agent) do
+  agent = Agent.execute_tools(agent)
+  # Continue stepping...
+end
+
+# With logging
+defp loop_with_logging(agent) do
+  {:ok, response, agent} = Agent.step(agent)
+  IO.puts("🤖 #{response.content}")
+
+  if Agent.has_tool_calls?(agent) do
+    agent = Agent.execute_tools(agent)
+    loop_with_logging(agent)
+  else
+    agent
+  end
+end
+```
+
+Available methods: `step/1`, `add_message/2`, `get_messages/1`, `has_tool_calls?/1`, `execute_tools/1`
 

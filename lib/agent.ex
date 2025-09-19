@@ -5,149 +5,6 @@ defmodule Dantex.Agent do
   They can track the history of tool calls and enforce limits on the number of failed
   retries for a given tool and set of arguments.
 
-  ## Telemetry Events
-
-  This module emits several telemetry events that can be used for observability,
-  logging, debugging, and real-time UI updates:
-
-  ### `[:dantex, :agent, :message]`
-  Emitted for each message processed in the conversation loop.
-
-  **Measurements:** `%{iteration: integer()}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    message: %{
-      role: String.t(),
-      content: String.t() | nil,
-      has_tool_calls: boolean(),
-      tool_calls_count: integer(),
-      tool_calls: list() | nil,
-      tool_call_id: String.t() | nil
-    },
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ### `[:dantex, :agent, :response]`
-  Emitted when the agent provides a final response (no more tool calls).
-
-  **Measurements:** `%{iteration: integer()}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    final_message: %{
-      role: String.t(),
-      content: String.t() | nil,
-      has_tool_calls: boolean(),
-      tool_calls_count: integer(),
-      tool_calls: list() | nil,
-      tool_call_id: String.t() | nil
-    },
-    total_iterations: integer(),
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ### `[:dantex, :agent, :tool_call_start]`
-  Emitted when a tool call begins execution.
-
-  **Measurements:** `%{}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    tool_name: String.t(),
-    tool_call_id: String.t(),
-    arguments: String.t(), # JSON string
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ### `[:dantex, :agent, :tool_call_complete]`
-  Emitted when a tool call completes.
-
-  **Measurements:** `%{}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    tool_name: String.t(),
-    tool_call_id: String.t(),
-    result: any(),
-    success: boolean(),
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ### `[:dantex, :agent, :ai_request]`
-  Emitted when messages are sent to the AI provider.
-
-  **Measurements:** `%{iteration: integer()}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    message: %{
-      role: String.t(),
-      content: String.t() | nil,
-      has_tool_calls: boolean(),
-      tool_calls_count: integer(),
-      tool_calls: list() | nil,
-      tool_call_id: String.t() | nil
-    },
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ### `[:dantex, :agent, :tool_result_message]`
-  Emitted when a tool call result message is created.
-
-  **Measurements:** `%{}`
-  **Metadata:**
-  ```elixir
-  %{
-    agent_id: String.t(),
-    tool_name: String.t(),
-    tool_call_id: String.t(),
-    message: %{
-      role: String.t(),
-      content: String.t() | nil,
-      has_tool_calls: boolean(),
-      tool_calls_count: integer(),
-      tool_calls: list() | nil,
-      tool_call_id: String.t() | nil
-    },
-    timestamp: DateTime.t()
-  }
-  ```
-
-  ## Custom Telemetry Handlers
-
-  You can attach custom handlers to these events for logging, metrics, or UI updates:
-
-  ```elixir
-  # Logging handler
-  :telemetry.attach("my-logger", [:dantex, :agent, :message], fn _name, _measurements, metadata, _config ->
-    Logger.info("Agent message received", metadata)
-  end, nil)
-
-  # LiveView/PubSub handler
-  :telemetry.attach("my-liveview", [:dantex, :agent, :message], fn _name, _measurements, metadata, _config ->
-    Phoenix.PubSub.broadcast(MyApp.PubSub, "agent:\#{metadata.agent_id}", {:agent_message, metadata})
-  end, nil)
-
-  # Metrics handler
-  :telemetry.attach("my-metrics", [:dantex, :agent, :tool_call_complete], fn _name, _measurements, metadata, _config ->
-    :telemetry.execute([:my_app, :tool_calls], %{count: 1}, %{
-      tool_name: metadata.tool_name,
-      success: metadata.success
-    })
-  end, nil)
-  ```
-
   ## Sub-Agent Support
 
   Agents can have specialized sub-agents that handle specific types of tasks.
@@ -162,13 +19,13 @@ defmodule Dantex.Agent do
         model: "claude-3-opus",
         messages: [Message.system("You are an expert code reviewer")]
       )
-      
+
       debugger = Agent.new(
         provider: :openai,
         model: "gpt-4o",
         messages: [Message.system("You are a debugging specialist")]
       )
-      
+
       # Create main agent with sub-agents
       agent = Agent.new(
         provider: :openai,
@@ -210,7 +67,7 @@ defmodule Dantex.Agent do
         tool :roll_die,
           description: "Roll a six-sided die and return the result",
           input: [sides: [:integer, default: 6]] do
-          
+
           {:ok, %{result: Enum.random(1..params.sides)}}
         end
       end
@@ -413,18 +270,118 @@ defmodule Dantex.Agent do
     end
   end
 
-  @max_iterations 50
+  @doc """
+  Executes a single iteration of the conversation loop.
 
-  @spec emit_telemetry(String.t(), atom(), map(), map()) :: :ok
-  defp emit_telemetry(agent_id, event_name, measurements, metadata) do
-    full_metadata =
-      Map.merge(metadata, %{
-        agent_id: agent_id,
-        timestamp: DateTime.utc_now()
-      })
+  This performs one complete cycle:
+  1. Sends current messages to the AI provider
+  2. Receives and processes the response
+  3. Extracts any tool calls from the response
+  4. Returns the updated agent with the new message added
 
-    :telemetry.execute([:dantex, :agent, event_name], measurements, full_metadata)
+  Use this method to build custom agentic loops with full control over
+  when to continue, stop, or add custom logic between iterations.
+
+  ## Example
+
+      agent = Agent.new(provider: :openai, model: "gpt-4", tools: [MyTool])
+      agent = Agent.add_message(agent, Message.user("Hello"))
+
+      # Execute one step
+      {:ok, response_message, updated_agent} = Agent.step(agent)
+
+      # Check if more iterations needed
+      if Agent.has_tool_calls?(updated_agent) do
+        updated_agent = Agent.execute_tools(updated_agent)
+        # Continue with more steps...
+      end
+  """
+  @spec step(t()) :: {:ok, Message.t(), t()} | {:error, term()}
+  def step(%__MODULE__{} = agent) do
+    with {:ok, {last_msg, _}, _} <- chat_completion(agent, agent.messages),
+         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
+      {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
+      {:ok, final_msg, updated_agent}
+    else
+      {:error, reason} -> {:error, reason}
+    end
   end
+
+  @doc """
+  Adds a message to the agent's conversation history.
+
+  ## Example
+
+      agent = Agent.new(provider: :openai, model: "gpt-4")
+      agent = Agent.add_message(agent, Message.user("What is 2+2?"))
+      agent = Agent.add_message(agent, Message.assistant("2+2 equals 4"))
+  """
+  @spec add_message(t(), Message.t()) :: t()
+  def add_message(%__MODULE__{} = agent, %Message{} = message) do
+    %{agent | messages: agent.messages ++ [message]}
+  end
+
+  @doc """
+  Returns the current conversation history.
+
+  ## Example
+
+      messages = Agent.get_messages(agent)
+      IO.inspect(length(messages))  # Number of messages in conversation
+  """
+  @spec get_messages(t()) :: [Message.t()]
+  def get_messages(%__MODULE__{} = agent) do
+    agent.messages
+  end
+
+  @doc """
+  Checks if the agent's last message contains tool calls that need to be executed.
+
+  ## Example
+
+      agent = Agent.step(agent)
+      if Agent.has_tool_calls?(agent) do
+        agent = Agent.execute_tools(agent)
+      end
+  """
+  @spec has_tool_calls?(t()) :: boolean()
+  def has_tool_calls?(%__MODULE__{messages: messages}) when length(messages) > 0 do
+    last_message = List.last(messages)
+    message_has_tool_calls?(last_message)
+  end
+
+  def has_tool_calls?(%__MODULE__{}), do: false
+
+  @doc """
+  Executes any pending tool calls from the last message and adds the results to the conversation.
+
+  This method should be called after `step/1` when `has_tool_calls?/1` returns true.
+  It will execute all tool calls from the last assistant message and add the tool
+  result messages to the conversation history.
+
+  ## Example
+
+      agent = Agent.step(agent)
+      if Agent.has_tool_calls?(agent) do
+        agent = Agent.execute_tools(agent)
+        # Tool results are now in the conversation
+      end
+  """
+  @spec execute_tools(t()) :: t()
+  def execute_tools(%__MODULE__{messages: messages} = agent) when length(messages) > 0 do
+    last_message = List.last(messages)
+
+    if message_has_tool_calls?(last_message) do
+      {:ok, _final_msg, updated_agent} = process_tool_calls(agent, last_message)
+      updated_agent
+    else
+      agent
+    end
+  end
+
+  def execute_tools(%__MODULE__{} = agent), do: agent
+
+  @max_iterations 50
 
   @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) ::
           {:ok, Message.t(), t()} | {:error, term()}
@@ -435,20 +392,12 @@ defmodule Dantex.Agent do
   defp run_conversation_loop(agent, messages, iteration) do
     with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      emit_telemetry(agent.context.id, :message, %{iteration: iteration}, %{
-        message: Message.to_telemetry(processed_msg)
-      })
 
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
 
-      if has_tool_calls?(final_msg) do
+      if message_has_tool_calls?(final_msg) do
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
       else
-        emit_telemetry(agent.context.id, :response, %{iteration: iteration}, %{
-          final_message: Message.to_telemetry(final_msg),
-          total_iterations: iteration + 1
-        })
-
         {:ok, final_msg, updated_agent}
       end
     else
@@ -456,13 +405,13 @@ defmodule Dantex.Agent do
     end
   end
 
-  @spec has_tool_calls?(Message.t()) :: boolean()
-  defp has_tool_calls?(%Message{tool_calls: tool_calls})
+  @spec message_has_tool_calls?(Message.t()) :: boolean()
+  defp message_has_tool_calls?(%Message{tool_calls: tool_calls})
        when is_list(tool_calls) and length(tool_calls) > 0 do
     true
   end
 
-  defp has_tool_calls?(_), do: false
+  defp message_has_tool_calls?(_), do: false
 
   @spec process_message(t(), Message.t()) :: {:ok, Message.t(), t()}
   defp process_message(agent, %{tool_calls: tool_calls} = last_msg)
@@ -607,13 +556,6 @@ defmodule Dantex.Agent do
       tool_name = Map.get(tool_call, :function) |> Map.get(:name)
       tool = Enum.find(tools, fn t -> t.tool_name() == tool_name end)
 
-      # Emit telemetry event for tool execution start
-      emit_telemetry(context.id, :tool_call_start, %{}, %{
-        tool_name: tool_name,
-        tool_call_id: Map.get(tool_call, :id),
-        arguments: Map.get(tool_call, :function) |> Map.get(:arguments)
-      })
-
       {result_message, original_result} =
         if tool == nil do
           error_result = %{error: "Tool not found: #{tool_name}"}
@@ -634,21 +576,6 @@ defmodule Dantex.Agent do
               {Message.tool_result(Map.get(tool_call, :id), error_result), error_result}
           end
         end
-
-      # Emit telemetry event for tool execution completion
-      emit_telemetry(context.id, :tool_call_complete, %{}, %{
-        tool_name: tool_name,
-        tool_call_id: Map.get(tool_call, :id),
-        result: result_message.content,
-        success: not (is_map(original_result) and Map.has_key?(original_result, :error))
-      })
-
-      # Emit telemetry event for tool call result message
-      emit_telemetry(context.id, :tool_result_message, %{}, %{
-        tool_name: tool_name,
-        tool_call_id: Map.get(tool_call, :id),
-        message: Message.to_telemetry(result_message)
-      })
 
       {result_message, original_result}
     end)
