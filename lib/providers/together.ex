@@ -1,7 +1,7 @@
 defmodule Dantex.Providers.Together do
   @moduledoc """
   Together AI provider implementation for chat completions.
-  
+
   Direct HTTP implementation for Together AI's OpenAI-compatible API endpoints
   with custom error handling and response parsing.
   """
@@ -114,7 +114,8 @@ defmodule Dantex.Providers.Together do
 
   defp parse_success_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"choices" => choices, "usage" => usage}} ->
+      {:ok, %{"choices" => choices, "usage" => usage} = res} ->
+        IO.inspect(res, label: "Together Response")
         messages = parse_choices(choices)
         formatted_usage = %{total_tokens: usage["total_tokens"]}
         {:ok, messages, formatted_usage}
@@ -132,10 +133,10 @@ defmodule Dantex.Providers.Together do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
         {:rate_limit, "Together AI rate limit: #{message}"}
-      
+
       {:ok, %{"message" => message}} ->
         {:rate_limit, "Together AI rate limit: #{message}"}
-      
+
       {:error, _} ->
         # Handle raw string responses
         case String.trim(body) do
@@ -149,10 +150,10 @@ defmodule Dantex.Providers.Together do
     case Jason.decode(body) do
       {:ok, %{"error" => %{"message" => message}}} ->
         {:error, "Together AI Error (#{status_code}): #{message}"}
-      
+
       {:ok, %{"message" => message}} ->
         {:error, "Together AI Error (#{status_code}): #{message}"}
-      
+
       {:error, _} ->
         # Handle raw string responses
         case String.trim(body) do
