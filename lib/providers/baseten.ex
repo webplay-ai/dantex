@@ -135,6 +135,9 @@ defmodule Dantex.Providers.Baseten do
       {:ok, %{"error" => %{"message" => message}}} ->
         {:error, "Baseten Error (#{status_code}): #{message}"}
 
+      {:ok, %{"error" => message}} when is_binary(message) ->
+        {:error, "Baseten Error (#{status_code}): #{message}"}
+
       {:ok, %{"message" => message}} ->
         {:error, "Baseten Error (#{status_code}): #{message}"}
 
