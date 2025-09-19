@@ -83,13 +83,13 @@ defmodule Dantex.Model do
   Uses the provider stored in the model struct instance.
   """
   @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t())) ::
-          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
+          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()} | {:rate_limit, String.t()}
   def chat_completion(%__MODULE__{} = model, messages, tools) do
     chat_completion(model, messages, tools, nil)
   end
 
   @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t()), non_neg_integer() | nil) ::
-          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()}
+          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()} | {:rate_limit, String.t()}
   def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools, timeout)
       when not is_nil(provider) do
     opts = %{
