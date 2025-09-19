@@ -622,14 +622,14 @@ defmodule Dantex.Agent do
         if message_has_tool_calls?(message) do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
-              updated_messages = messages ++ [processed_msg]
+              updated_messages = messages ++ [message] ++ [processed_msg]
               {:ok, {processed_msg, %{agent | messages: updated_messages}}, usage}
 
             {:error, reason} ->
               {:error, reason}
           end
         else
-          {:ok, {message, %{agent | messages: messages}}, usage}
+          {:ok, {message, %{agent | messages: messages ++ [message]}}, usage}
         end
 
       {:rate_limit, reason} ->
