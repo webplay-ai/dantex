@@ -307,6 +307,28 @@ defmodule Dantex.Agent do
     end
   end
 
+  def execute_tool_calls(%__MODULE__{} = agent) do
+    message = List.last(agent.messages)
+
+    case process_message(agent, message) do
+      {:ok, message, updated_agent} ->
+        {:ok, message, updated_agent}
+
+      {:error, reason} ->
+        error_message = %Message{
+          role: "assistant",
+          content: "Error executing tool calls: #{inspect(reason)}"
+        }
+
+        updated_messages = agent.messages ++ [error_message]
+        updated_agent = %{agent | messages: updated_messages}
+        {:ok, error_message, updated_agent}
+
+      _ ->
+        {:ok, message, agent}
+    end
+  end
+
   @doc """
   Adds a message to the agent's conversation history.
 
@@ -405,7 +427,6 @@ defmodule Dantex.Agent do
   defp run_conversation_loop(agent, messages, iteration) do
     with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
 
       if message_has_tool_calls?(final_msg) do
@@ -552,6 +573,29 @@ defmodule Dantex.Agent do
   defp build_messages(%__MODULE__{messages: messages}, user_prompt)
        when is_binary(user_prompt) do
     {:ok, messages ++ [Message.user(user_prompt)]}
+  end
+
+  @spec chat_completion(t()) ::
+          {:ok, {Message.t(), t()}} | {:error, term()}
+  def chat_completion(%__MODULE__{} = agent) do
+    case chat_completion(agent, agent.messages) do
+      {:ok, {message, messages}, usage} ->
+        if message_has_tool_calls?(message) do
+          case agent.tool_adapter.extract_tool_calls(message) do
+            {:ok, processed_msg} ->
+              updated_messages = messages ++ [processed_msg]
+              {:ok, {processed_msg, %{agent | messages: updated_messages}}, usage}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+        else
+          {:ok, {message, %{agent | messages: messages}}, usage}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @spec chat_completion(t(), list(Message.t())) ::
