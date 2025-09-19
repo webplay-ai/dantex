@@ -303,6 +303,7 @@ defmodule Dantex.Agent do
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
       {:ok, final_msg, updated_agent}
     else
+      {:rate_limit, reason} -> {:error, reason}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -472,6 +473,7 @@ defmodule Dantex.Agent do
         {:ok, final_msg, updated_agent}
       end
     else
+      {:rate_limit, reason} -> {:error, reason}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -630,13 +632,16 @@ defmodule Dantex.Agent do
           {:ok, {message, %{agent | messages: messages}}, usage}
         end
 
+      {:rate_limit, reason} ->
+        {:error, reason}
+
       {:error, reason} ->
         {:error, reason}
     end
   end
 
   @spec chat_completion(t(), list(Message.t())) ::
-          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, term()}
+          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, term()} | {:rate_limit, String.t()}
   defp(chat_completion(agent, messages)) do
     Model.chat_completion(agent.model, messages, agent.tools, agent.timeout)
   end
