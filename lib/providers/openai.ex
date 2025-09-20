@@ -21,6 +21,8 @@ defmodule Dantex.Providers.OpenAI do
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
     timeout = Map.get(opts, :timeout, 180_000)
+    # Ensure timeout is a positive integer
+    timeout = if is_integer(timeout) and timeout > 0, do: timeout, else: 180_000
 
     api_key = Map.get(opts, :api_key) || Dantex.Providers.Config.get_api_key(:openai)
 
