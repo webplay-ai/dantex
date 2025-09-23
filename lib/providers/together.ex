@@ -62,7 +62,21 @@ defmodule Dantex.Providers.Together do
 
     url = "#{base_url}/v1/chat/completions"
 
-    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout: timeout) do
+    # Add comprehensive timeout settings (all in milliseconds)
+    timeout_options = case timeout do
+      nil -> [
+        timeout: 60_000,         # Overall request timeout
+        recv_timeout: 180_000,   # Response receiving timeout
+        connect_timeout: 15_000  # Connection establishment timeout
+      ]
+      custom_timeout -> [
+        timeout: custom_timeout,
+        recv_timeout: custom_timeout * 2,
+        connect_timeout: 15_000
+      ]
+    end
+
+    case HTTPoison.post(url, Jason.encode!(payload), headers, timeout_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         parse_success_response(body)
 
