@@ -48,6 +48,7 @@ defmodule Dantex.Providers.Ollama do
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
     timeout = Map.get(opts, :timeout)
+    temperature = Map.get(opts, :temperature)
     
     unless model in @supported_models do
       {:error, "Invalid model"}
@@ -57,7 +58,7 @@ defmodule Dantex.Providers.Ollama do
     url = "#{api_base}/api/chat"
 
     headers = [{"Content-Type", "application/json"}]
-    body = build_request_body(model, messages, tools)
+    body = build_request_body(model, messages, tools, temperature)
 
     try do
       # Add comprehensive timeout settings (all in milliseconds)
@@ -102,8 +103,8 @@ defmodule Dantex.Providers.Ollama do
     end
   end
 
-  @spec build_request_body(String.t(), [Message.t()], list(Tool.t())) :: String.t()
-  defp build_request_body(model, messages, tools) do
+  @spec build_request_body(String.t(), [Message.t()], list(Tool.t()), float() | nil) :: String.t()
+  defp build_request_body(model, messages, tools, temperature) do
     formatted_messages =
       Enum.map(messages, fn message ->
         case message do
@@ -141,6 +142,16 @@ defmodule Dantex.Providers.Ollama do
         request
       else
         Map.put(request, :tools, format_tools(tools))
+      end
+
+    # Add options with temperature if provided
+    request =
+      if temperature == nil do
+        request
+      else
+        Map.put(request, :options, %{
+          temperature: temperature
+        })
       end
 
     Jason.encode!(request)

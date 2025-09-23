@@ -30,6 +30,7 @@ defmodule Dantex.Providers.Anthropic do
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
     timeout = Map.get(opts, :timeout)
+    temperature = Map.get(opts, :temperature)
     
     unless model in @supported_models do
       {:error, "Invalid model"}
@@ -49,7 +50,7 @@ defmodule Dantex.Providers.Anthropic do
       {"anthropic-version", "2023-06-01"}
     ]
 
-    body = build_request_body(model, messages, tools)
+    body = build_request_body(model, messages, tools, temperature)
 
     try do
       timeout_options = case timeout do
@@ -97,8 +98,8 @@ defmodule Dantex.Providers.Anthropic do
     end
   end
 
-  @spec build_request_body(String.t(), [Message.t()], list(Dantex.Tool.t())) :: String.t()
-  defp build_request_body(model, messages, tools) do
+  @spec build_request_body(String.t(), [Message.t()], list(Dantex.Tool.t()), float() | nil) :: String.t()
+  defp build_request_body(model, messages, tools, temperature) do
     # Separate system messages from user/assistant messages
     {system_messages, conversation_messages} = split_system_messages(messages)
     
@@ -122,6 +123,14 @@ defmodule Dantex.Providers.Anthropic do
         request
       else
         Map.put(request, :tools, format_tools(tools))
+      end
+
+    # Add temperature if provided
+    request =
+      if temperature == nil do
+        request
+      else
+        Map.put(request, :temperature, temperature)
       end
 
     Jason.encode!(request)

@@ -38,6 +38,7 @@ defmodule Dantex.Providers.Gemini do
     messages = Map.get(opts, :messages, [])
     tools = Map.get(opts, :tools, [])
     timeout = Map.get(opts, :timeout)
+    temperature = Map.get(opts, :temperature)
     
     unless model in @supported_models do
       {:error, "Invalid model"}
@@ -49,7 +50,7 @@ defmodule Dantex.Providers.Gemini do
       "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent?key=#{api_key}"
 
     headers = [{"Content-Type", "application/json"}]
-    body = build_request_body(messages, tools)
+    body = build_request_body(messages, tools, temperature)
 
     try do
       # Add comprehensive timeout settings (all in milliseconds)
@@ -94,8 +95,8 @@ defmodule Dantex.Providers.Gemini do
     end
   end
 
-  @spec build_request_body([Message.t()], list(Tool.t())) :: String.t()
-  defp build_request_body(messages, tools) do
+  @spec build_request_body([Message.t()], list(Tool.t()), float() | nil) :: String.t()
+  defp build_request_body(messages, tools, temperature) do
     contents =
       Enum.map(messages, fn %Message{role: role, content: content} ->
         %{
@@ -113,6 +114,16 @@ defmodule Dantex.Providers.Gemini do
       else
         Map.put(request, :tools, %{
           function_declarations: format_tools(tools)
+        })
+      end
+
+    # Add generation config with temperature if provided
+    request =
+      if temperature == nil do
+        request
+      else
+        Map.put(request, :generationConfig, %{
+          temperature: temperature
         })
       end
 

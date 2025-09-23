@@ -97,7 +97,8 @@ defmodule Dantex.Agent do
           tool_adapter: module(),
           context: map(),
           sub_agents: %{String.t() => t()},
-          timeout: non_neg_integer() | nil
+          timeout: non_neg_integer() | nil,
+          temperature: float() | nil
         }
 
   defstruct [
@@ -110,7 +111,8 @@ defmodule Dantex.Agent do
     :tool_adapter,
     :context,
     :sub_agents,
-    :timeout
+    :timeout,
+    :temperature
   ]
 
   @doc """
@@ -127,6 +129,7 @@ defmodule Dantex.Agent do
     * `:tool_adapter` - The tool adapter module to use (default: OpenAIAdapter - uses OpenAI function calling spec)
     * `:context` - Map of context data passed to tools (default: %{})
     * `:timeout` - Request timeout in milliseconds (optional, uses provider defaults if not specified)
+    * `:temperature` - Temperature value for the model (0.0-2.0, optional, uses provider defaults if not specified)
 
   ## Example
 
@@ -142,7 +145,8 @@ defmodule Dantex.Agent do
         max_failed_retries: 3,
         tool_adapter: OpenAIAdapter,
         context: %{weather_api_key: "your_key", user_id: 123},
-        timeout: 60_000  # 60 seconds
+        timeout: 60_000,  # 60 seconds
+        temperature: 0.7  # Temperature for model creativity
       )
   """
   require Logger
@@ -159,6 +163,7 @@ defmodule Dantex.Agent do
           | {:max_failed_retries, non_neg_integer()}
           | {:tool_adapter, ToolAdapter.t()}
           | {:timeout, non_neg_integer()}
+          | {:temperature, float()}
         ]) ::
           t()
   def new(opts) do
@@ -174,6 +179,7 @@ defmodule Dantex.Agent do
     tool_adapter = Keyword.get(opts, :tool_adapter, OpenAIAdapter)
     context = Keyword.get(opts, :context, %{})
     timeout = Keyword.get(opts, :timeout, nil)
+    temperature = Keyword.get(opts, :temperature, nil)
 
     # Generate agent ID if not provided
     context_with_id =
@@ -199,7 +205,8 @@ defmodule Dantex.Agent do
       tool_adapter: tool_adapter,
       context: context_with_id,
       sub_agents: sub_agents,
-      timeout: timeout
+      timeout: timeout,
+      temperature: temperature
     }
   end
 
