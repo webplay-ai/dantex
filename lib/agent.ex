@@ -615,7 +615,7 @@ defmodule Dantex.Agent do
           {:ok, {Message.t(), t()}} | {:error, term()}
   def chat_completion(%__MODULE__{} = agent) do
     provider = get_provider(agent.provider)
-    IO.inspect(agent.messages, label: "Agent Messages INPUT")
+    input_messages = agent.messages
 
     case provider.chat_completion(agent) do
       {:ok, messages, _usage} ->
@@ -625,13 +625,13 @@ defmodule Dantex.Agent do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
               updated_messages = List.replace_at(messages, -1, processed_msg)
-              {:ok, {processed_msg, %{agent | messages: updated_messages}}}
+              {:ok, {processed_msg, %{agent | messages: input_messages ++ updated_messages}}}
 
             {:error, reason} ->
               {:error, reason}
           end
         else
-          {:ok, {message, %{agent | messages: messages ++ [message]}}}
+          {:ok, {message, %{agent | messages: input_messages ++ messages}}}
         end
 
       {:rate_limit, reason} ->
