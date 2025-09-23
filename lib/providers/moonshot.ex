@@ -8,7 +8,7 @@ defmodule Dantex.Providers.Moonshot do
 
   @behaviour Dantex.Provider
 
-  @default_base_url "https://api.moonshot.cn/v1"
+  @default_base_url "https://api.moonshot.ai/v1"
 
   @spec chat_completion(map()) ::
           {:ok, list(Dantex.Message.t()), Dantex.Provider.usage()}
