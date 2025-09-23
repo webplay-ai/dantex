@@ -84,11 +84,12 @@ defmodule Dantex.Agent do
       {:ok, response, updated_agent} = Agent.run(agent, "Roll the dice")
   """
 
-  alias Dantex.{Tool, Model, Message, Provider}
+  alias Dantex.{Tool, Message}
   alias Dantex.Tool.{OpenAIAdapter, ToolAdapter, MCP}
 
   @type t :: %__MODULE__{
-          model: Model.t(),
+          provider: atom(),
+          model: String.t(),
           tools: [Tool.t()],
           messages: [Message.t()],
           tool_history: [Tool.ToolHistory.t()],
@@ -100,6 +101,7 @@ defmodule Dantex.Agent do
         }
 
   defstruct [
+    :provider,
     :model,
     :tools,
     :messages,
@@ -188,7 +190,8 @@ defmodule Dantex.Agent do
     all_tools = tools ++ mcp_tools ++ sub_agent_tools
 
     %__MODULE__{
-      model: Model.new(provider, model),
+      provider: provider,
+      model: model,
       messages: messages,
       tools: all_tools,
       tool_history: [],
@@ -199,6 +202,21 @@ defmodule Dantex.Agent do
       timeout: timeout
     }
   end
+
+
+  defp get_provider(provider_key) do
+    case provider_key do
+      :openai -> Dantex.Providers.OpenAI
+      :ollama -> Dantex.Providers.Ollama
+      :gemini -> Dantex.Providers.Gemini
+      :moonshot -> Dantex.Providers.Moonshot
+      :together -> Dantex.Providers.Together
+      :anthropic -> Dantex.Providers.Anthropic
+      :baseten -> Dantex.Providers.Baseten
+      _ -> raise "Unknown provider: #{provider_key}"
+    end
+  end
+
 
   @doc """
   Adds additional tools to an existing agent.
@@ -264,7 +282,8 @@ defmodule Dantex.Agent do
   @spec run(t(), Message.t() | String.t()) :: {:ok, Message.t(), t()} | {:error, term()}
   def run(%__MODULE__{} = agent, message) do
     with {:ok, messages} <- build_messages(agent, message) do
-      run_conversation_loop(agent, messages, 0)
+      agent = %{agent | messages: messages}
+      run_conversation_loop(agent, 0)
     else
       {:error, reason} -> {:error, reason}
     end
@@ -298,8 +317,8 @@ defmodule Dantex.Agent do
   """
   @spec step(t()) :: {:ok, Message.t(), t()} | {:error, term()}
   def step(%__MODULE__{} = agent) do
-    with {:ok, {last_msg, _}, _} <- chat_completion(agent, agent.messages),
-         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
+    with {:ok, messages, _} <- chat_completion(agent),
+         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(List.last(messages)) do
       {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
       {:ok, final_msg, updated_agent}
     else
@@ -456,24 +475,22 @@ defmodule Dantex.Agent do
 
   @max_iterations 50
 
-  @spec run_conversation_loop(t(), [Message.t()], non_neg_integer()) ::
+  @spec run_conversation_loop(t(), non_neg_integer()) ::
           {:ok, Message.t(), t()} | {:error, term()}
-  defp run_conversation_loop(_agent, _messages, iteration) when iteration >= @max_iterations do
+  defp run_conversation_loop(_agent, iteration) when iteration >= @max_iterations do
     {:error, "Maximum iterations (#{@max_iterations}) reached. Possible infinite loop detected."}
   end
 
-  defp run_conversation_loop(agent, messages, iteration) do
-    with {:ok, {last_msg, updated_messages}, _} <- chat_completion(agent, messages),
+  defp run_conversation_loop(agent, iteration) do
+    with {:ok, {last_msg, updated_messages}, _} <- chat_completion(agent),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      # Use the updated_messages from chat_completion instead of adding the message again
       agent_with_updated_messages = %{agent | messages: updated_messages}
 
       if message_has_tool_calls?(processed_msg) do
-        # Process tool calls without adding the message again (it's already in updated_messages)
         {:ok, final_msg, updated_agent} =
-          process_tool_calls_without_adding_message(agent_with_updated_messages, processed_msg)
+          process_tool_calls(agent_with_updated_messages, processed_msg)
 
-        run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
+        run_conversation_loop(updated_agent, iteration + 1)
       else
         {:ok, processed_msg, agent_with_updated_messages}
       end
@@ -646,19 +663,6 @@ defmodule Dantex.Agent do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp get_provider(provider_key) do
-    case provider_key do
-      :openai -> Dantex.Providers.OpenAI
-      :ollama -> Dantex.Providers.Ollama
-      :gemini -> Dantex.Providers.Gemini
-      :moonshot -> Dantex.Providers.Moonshot
-      :together -> Dantex.Providers.Together
-      :anthropic -> Dantex.Providers.Anthropic
-      :baseten -> Dantex.Providers.Baseten
-      _ -> raise "Unknown provider: #{provider_key}"
     end
   end
 
