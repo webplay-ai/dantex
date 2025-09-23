@@ -80,7 +80,7 @@ defmodule Dantex.Providers.OpenAI do
         Chat.Completions.new(params)
       else
         formatted_tools = format_tools(tools)
-        Chat.Completions.new([{:tools, formatted_tools} | params])
+        Chat.Completions.new([{:tools, formatted_tools}, {:tool_choice, "auto"} | params])
       end
 
     with {:ok, result} <-
@@ -182,7 +182,9 @@ defmodule Dantex.Providers.OpenAI do
       end)
 
     formatted_usage = %{
-      total_tokens: usage["total_tokens"]
+      total_tokens: usage["total_tokens"],
+      prompt_tokens: usage["prompt_tokens"],
+      completion_tokens: usage["completion_tokens"]
     }
 
     {:ok, messages, formatted_usage}

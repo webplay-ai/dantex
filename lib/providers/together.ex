@@ -45,7 +45,9 @@ defmodule Dantex.Providers.Together do
       if Enum.empty?(tools) do
         payload
       else
-        Map.put(payload, :tools, format_tools(tools))
+        payload
+        |> Map.put(:tools, format_tools(tools))
+        |> Map.put(:tool_choice, "auto")
       end
 
     # Add Together-specific parameters if configured
