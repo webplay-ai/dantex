@@ -21,6 +21,7 @@ Dantex is an Elixir-based AI agentic framework for building generative AI applic
 - Automatic input/output validation using Ecto schemas
 - JSON Schema generation for OpenAI/Ollama function calling
 - Tool adapters handle provider-specific formatting (OpenAI vs XML)
+- **Remote tool support** for provider-native tools (like Anthropic's web search)
 - MCP (Model Context Protocol) support for external tool servers via Hermes package
 
 ### Evaluation Framework (`lib/eval.ex`)

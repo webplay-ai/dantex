@@ -97,7 +97,7 @@ defmodule Dantex.Providers.Anthropic do
     end
   end
 
-  @spec build_request_body(String.t(), [Message.t()], list(Dantex.Tool.t())) :: String.t()
+  @spec build_request_body(String.t(), [Message.t()], list(Dantex.Tool.t() | Dantex.Tool.RemoteTool.t())) :: String.t()
   defp build_request_body(model, messages, tools) do
     # Separate system messages from user/assistant messages
     {system_messages, conversation_messages} = split_system_messages(messages)
@@ -176,17 +176,25 @@ defmodule Dantex.Providers.Anthropic do
     end)
   end
 
-  @spec format_tools([Dantex.Tool.t()]) :: list(map())
+  @spec format_tools([Dantex.Tool.t() | Dantex.Tool.RemoteTool.t()]) :: list(map())
   defp format_tools(tools) do
-    Enum.map(tools, fn tool ->
-      schema = Jason.decode!(tool.generate_tool_json_schema())
-      
-      %{
-        name: schema["function"]["name"],
-        description: schema["function"]["description"],
-        input_schema: schema["function"]["parameters"]
-      }
-    end)
+    Enum.map(tools, &format_tool/1)
+  end
+
+  # Format remote tools using provider-specific format
+  defp format_tool(%Dantex.Tool.RemoteTool{} = remote_tool) do
+    Dantex.Tool.RemoteTool.to_provider_format(remote_tool, :anthropic)
+  end
+
+  # Format regular tools using JSON schema format
+  defp format_tool(tool) do
+    schema = Jason.decode!(tool.generate_tool_json_schema())
+
+    %{
+      name: schema["function"]["name"],
+      description: schema["function"]["description"],
+      input_schema: schema["function"]["parameters"]
+    }
   end
 
   @spec parse_response(map()) :: {:ok, [Message.t()], Dantex.Provider.usage()} | {:error, term()}

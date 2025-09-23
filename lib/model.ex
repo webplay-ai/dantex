@@ -83,15 +83,15 @@ defmodule Dantex.Model do
   Sends messages to the provider for chat completion.
   Uses the provider stored in the model struct instance.
   """
-  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t())) ::
+  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t() | Tool.RemoteTool.t())) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()} | {:rate_limit, String.t()}
   def chat_completion(%__MODULE__{} = model, messages, tools) do
     chat_completion(model, messages, tools, nil)
   end
 
-  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t()), non_neg_integer() | nil) ::
+  @spec chat_completion(%__MODULE__{}, list(Message.t()), list(Tool.t() | Tool.RemoteTool.t()), non_neg_integer() | nil) ::
           {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, String.t()} | {:rate_limit, String.t()}
-  def chat_completion(%__MODULE__{provider: provider, model: model} = _model, messages, tools, timeout)
+  def chat_completion(%__MODULE__{provider: provider, model: model}, messages, tools, timeout)
       when not is_nil(provider) do
     opts = %{
       model: model,
