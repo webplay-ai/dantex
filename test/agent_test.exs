@@ -23,7 +23,7 @@ defmodule Dantex.AgentTest do
         max_failed_retries: 3
       )
 
-      assert agent.model.model == "gpt-4o-mini"
+      assert agent.model == "gpt-4o-mini"
       assert agent.messages == messages
       assert agent.tools == []
       assert agent.max_failed_retries == 3

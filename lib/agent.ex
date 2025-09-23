@@ -317,36 +317,17 @@ defmodule Dantex.Agent do
   """
   @spec step(t()) :: {:ok, Message.t(), t()} | {:error, term()}
   def step(%__MODULE__{} = agent) do
-    with {:ok, messages, _} <- chat_completion(agent),
-         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(List.last(messages)) do
-      {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
-      {:ok, final_msg, updated_agent}
+    with {:ok, {message, updated_agent}} <- chat_completion(agent) do
+      {:ok, message, updated_agent}
     else
-      {:rate_limit, reason} -> {:error, reason}
       {:error, reason} -> {:error, reason}
     end
   end
 
   def execute_tool_calls(%__MODULE__{} = agent) do
     message = List.last(agent.messages)
-
-    case process_message(agent, message) do
-      {:ok, message, updated_agent} ->
-        {:ok, message, updated_agent}
-
-      {:error, reason} ->
-        error_message = %Message{
-          role: "assistant",
-          content: "Error executing tool calls: #{inspect(reason)}"
-        }
-
-        updated_messages = agent.messages ++ [error_message]
-        updated_agent = %{agent | messages: updated_messages}
-        {:ok, error_message, updated_agent}
-
-      _ ->
-        {:ok, message, agent}
-    end
+    {:ok, message, updated_agent} = process_message(agent, message)
+    {:ok, message, updated_agent}
   end
 
   @doc """
@@ -482,20 +463,16 @@ defmodule Dantex.Agent do
   end
 
   defp run_conversation_loop(agent, iteration) do
-    with {:ok, {last_msg, updated_messages}, _} <- chat_completion(agent),
-         {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      agent_with_updated_messages = %{agent | messages: updated_messages}
-
-      if message_has_tool_calls?(processed_msg) do
-        {:ok, final_msg, updated_agent} =
-          process_tool_calls(agent_with_updated_messages, processed_msg)
+    with {:ok, {last_msg, updated_agent}} <- chat_completion(agent) do
+      if message_has_tool_calls?(last_msg) do
+        {:ok, _final_msg, updated_agent} =
+          process_tool_calls(updated_agent, last_msg)
 
         run_conversation_loop(updated_agent, iteration + 1)
       else
-        {:ok, processed_msg, agent_with_updated_messages}
+        {:ok, last_msg, updated_agent}
       end
     else
-      {:rate_limit, reason} -> {:error, reason}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -642,20 +619,20 @@ defmodule Dantex.Agent do
     provider = get_provider(agent.provider)
 
     case provider.chat_completion(agent) do
-      {:ok, messages, usage} ->
+      {:ok, messages, _usage} ->
         message = List.last(messages)
 
         if message_has_tool_calls?(message) do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
-              updated_messages = messages ++ [processed_msg]
-              {:ok, {processed_msg, %{agent | messages: updated_messages}}, usage}
+              updated_messages = List.replace_at(messages, -1, processed_msg)
+              {:ok, {processed_msg, %{agent | messages: updated_messages}}}
 
             {:error, reason} ->
               {:error, reason}
           end
         else
-          {:ok, {message, %{agent | messages: messages ++ [message]}}, usage}
+          {:ok, {message, %{agent | messages: messages ++ [message]}}}
         end
 
       {:rate_limit, reason} ->
