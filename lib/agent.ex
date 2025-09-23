@@ -203,7 +203,6 @@ defmodule Dantex.Agent do
     }
   end
 
-
   defp get_provider(provider_key) do
     case provider_key do
       :openai -> Dantex.Providers.OpenAI
@@ -216,7 +215,6 @@ defmodule Dantex.Agent do
       _ -> raise "Unknown provider: #{provider_key}"
     end
   end
-
 
   @doc """
   Adds additional tools to an existing agent.
@@ -617,6 +615,7 @@ defmodule Dantex.Agent do
           {:ok, {Message.t(), t()}} | {:error, term()}
   def chat_completion(%__MODULE__{} = agent) do
     provider = get_provider(agent.provider)
+    IO.inspect(agent.messages, label: "Agent Messages INPUT")
 
     case provider.chat_completion(agent) do
       {:ok, messages, _usage} ->

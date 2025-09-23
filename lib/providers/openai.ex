@@ -134,8 +134,6 @@ defmodule Dantex.Providers.OpenAI do
 
   @spec parse_response(map()) :: {:ok, [Message.t()], Dantex.Provider.usage()} | {:error, term()}
   defp parse_response(%{"choices" => choices, "usage" => usage}) do
-    IO.inspect(choices, label: "OpenAI Choices", limit: :infinity)
-
     messages =
       choices
       |> Enum.map(fn choice ->
