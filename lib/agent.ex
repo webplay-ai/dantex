@@ -622,7 +622,7 @@ defmodule Dantex.Agent do
         if message_has_tool_calls?(message) do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
-              updated_messages = messages ++ [message] ++ [processed_msg]
+              updated_messages = messages ++ [processed_msg]
               {:ok, {processed_msg, %{agent | messages: updated_messages}}, usage}
 
             {:error, reason} ->
@@ -641,7 +641,9 @@ defmodule Dantex.Agent do
   end
 
   @spec chat_completion(t(), list(Message.t())) ::
-          {:ok, {Message.t(), [Message.t()]}, Provider.usage()} | {:error, term()} | {:rate_limit, String.t()}
+          {:ok, {Message.t(), [Message.t()]}, Provider.usage()}
+          | {:error, term()}
+          | {:rate_limit, String.t()}
   defp(chat_completion(agent, messages)) do
     Model.chat_completion(agent.model, messages, agent.tools, agent.timeout)
   end
