@@ -463,14 +463,19 @@ defmodule Dantex.Agent do
   end
 
   defp run_conversation_loop(agent, messages, iteration) do
-    with {:ok, {last_msg, _}, _} <- chat_completion(agent, messages),
+    with {:ok, {last_msg, updated_messages}, _} <- chat_completion(agent, messages),
          {:ok, processed_msg} <- agent.tool_adapter.extract_tool_calls(last_msg) do
-      {:ok, final_msg, updated_agent} = process_message(agent, processed_msg)
+      # Use the updated_messages from chat_completion instead of adding the message again
+      agent_with_updated_messages = %{agent | messages: updated_messages}
 
-      if message_has_tool_calls?(final_msg) do
+      if message_has_tool_calls?(processed_msg) do
+        # Process tool calls without adding the message again (it's already in updated_messages)
+        {:ok, final_msg, updated_agent} =
+          process_tool_calls_without_adding_message(agent_with_updated_messages, processed_msg)
+
         run_conversation_loop(updated_agent, updated_agent.messages, iteration + 1)
       else
-        {:ok, final_msg, updated_agent}
+        {:ok, processed_msg, agent_with_updated_messages}
       end
     else
       {:rate_limit, reason} -> {:error, reason}
@@ -617,8 +622,12 @@ defmodule Dantex.Agent do
   @spec chat_completion(t()) ::
           {:ok, {Message.t(), t()}} | {:error, term()}
   def chat_completion(%__MODULE__{} = agent) do
-    case chat_completion(agent, agent.messages) do
-      {:ok, {message, messages}, usage} ->
+    provider = get_provider(agent.provider)
+
+    case provider.chat_completion(agent) do
+      {:ok, messages, usage} ->
+        message = List.last(messages)
+
         if message_has_tool_calls?(message) do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
@@ -640,12 +649,17 @@ defmodule Dantex.Agent do
     end
   end
 
-  @spec chat_completion(t(), list(Message.t())) ::
-          {:ok, {Message.t(), [Message.t()]}, Provider.usage()}
-          | {:error, term()}
-          | {:rate_limit, String.t()}
-  defp(chat_completion(agent, messages)) do
-    Model.chat_completion(agent.model, messages, agent.tools, agent.timeout)
+  defp get_provider(provider_key) do
+    case provider_key do
+      :openai -> Dantex.Providers.OpenAI
+      :ollama -> Dantex.Providers.Ollama
+      :gemini -> Dantex.Providers.Gemini
+      :moonshot -> Dantex.Providers.Moonshot
+      :together -> Dantex.Providers.Together
+      :anthropic -> Dantex.Providers.Anthropic
+      :baseten -> Dantex.Providers.Baseten
+      _ -> raise "Unknown provider: #{provider_key}"
+    end
   end
 
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [{Message.t(), any()}]
