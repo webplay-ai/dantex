@@ -11,7 +11,9 @@ defmodule Dantex.Provider do
   @type t :: module()
 
   @type usage :: %{
-          total_tokens: integer()
+          total_tokens: integer(),
+          input_tokens: integer(),
+          output_tokens: integer()
         }
 
   @callback chat_completion(map()) ::

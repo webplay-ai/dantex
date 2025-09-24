@@ -183,8 +183,8 @@ defmodule Dantex.Providers.OpenAI do
 
     formatted_usage = %{
       total_tokens: usage["total_tokens"],
-      prompt_tokens: usage["prompt_tokens"],
-      completion_tokens: usage["completion_tokens"]
+      input_tokens: usage["prompt_tokens"] || usage["input_tokens"],
+      output_tokens: usage["completion_tokens"] || usage["output_tokens"]
     }
 
     {:ok, messages, formatted_usage}

@@ -98,7 +98,8 @@ defmodule Dantex.Agent do
           context: map(),
           sub_agents: %{String.t() => t()},
           timeout: non_neg_integer() | nil,
-          temperature: float() | nil
+          temperature: float() | nil,
+          usage: Dantex.Provider.usage()
         }
 
   defstruct [
@@ -112,7 +113,8 @@ defmodule Dantex.Agent do
     :context,
     :sub_agents,
     :timeout,
-    :temperature
+    :temperature,
+    :usage
   ]
 
   @doc """
@@ -206,7 +208,8 @@ defmodule Dantex.Agent do
       context: context_with_id,
       sub_agents: sub_agents,
       timeout: timeout,
-      temperature: temperature
+      temperature: temperature,
+      usage: %{total_tokens: 0, input_tokens: 0, output_tokens: 0}
     }
   end
 
@@ -360,6 +363,19 @@ defmodule Dantex.Agent do
   @spec get_messages(t()) :: [Message.t()]
   def get_messages(%__MODULE__{} = agent) do
     agent.messages
+  end
+
+  @doc """
+  Returns the current usage statistics for the agent.
+
+  ## Example
+
+      usage = Agent.get_usage(agent)
+      IO.inspect(usage.total_tokens)  # Total tokens used across all calls
+  """
+  @spec get_usage(t()) :: Dantex.Provider.usage()
+  def get_usage(%__MODULE__{} = agent) do
+    agent.usage
   end
 
   @doc """
@@ -625,20 +641,23 @@ defmodule Dantex.Agent do
     input_messages = agent.messages
 
     case provider.chat_completion(agent) do
-      {:ok, messages, _usage} ->
+      {:ok, messages, usage} ->
         message = List.last(messages)
+        updated_usage = accumulate_usage(agent.usage, usage)
 
         if message_has_tool_calls?(message) do
           case agent.tool_adapter.extract_tool_calls(message) do
             {:ok, processed_msg} ->
               updated_messages = List.replace_at(messages, -1, processed_msg)
-              {:ok, {processed_msg, %{agent | messages: input_messages ++ updated_messages}}}
+              updated_agent = %{agent | messages: input_messages ++ updated_messages, usage: updated_usage}
+              {:ok, {processed_msg, updated_agent}}
 
             {:error, reason} ->
               {:error, reason}
           end
         else
-          {:ok, {message, %{agent | messages: input_messages ++ messages}}}
+          updated_agent = %{agent | messages: input_messages ++ messages, usage: updated_usage}
+          {:ok, {message, updated_agent}}
         end
 
       {:rate_limit, reason} ->
@@ -647,6 +666,15 @@ defmodule Dantex.Agent do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @spec accumulate_usage(Dantex.Provider.usage(), Dantex.Provider.usage()) :: Dantex.Provider.usage()
+  defp accumulate_usage(current_usage, new_usage) do
+    %{
+      total_tokens: current_usage.total_tokens + new_usage.total_tokens,
+      input_tokens: current_usage.input_tokens + new_usage.input_tokens,
+      output_tokens: current_usage.output_tokens + new_usage.output_tokens
+    }
   end
 
   @spec execute_tool_calls([Tool.t()], list(Message.tool_call()), map()) :: [{Message.t(), any()}]
