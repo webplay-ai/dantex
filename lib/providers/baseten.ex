@@ -102,7 +102,11 @@ defmodule Dantex.Providers.Baseten do
     case Jason.decode(body) do
       {:ok, %{"choices" => choices, "usage" => usage}} ->
         messages = parse_choices(choices)
-        formatted_usage = %{total_tokens: usage["total_tokens"]}
+        formatted_usage = %{
+          total_tokens: usage["total_tokens"],
+          input_tokens: usage["prompt_tokens"] || 0,
+          output_tokens: usage["completion_tokens"] || 0
+        }
         {:ok, messages, formatted_usage}
 
       {:ok, _} ->

@@ -199,7 +199,9 @@ defmodule Dantex.Providers.Ollama do
     }
 
     formatted_usage = %{
-      total_tokens: eval_count
+      total_tokens: eval_count,
+      input_tokens: 0,
+      output_tokens: eval_count
     }
 
     {:ok, [message], formatted_usage}
@@ -217,7 +219,9 @@ defmodule Dantex.Providers.Ollama do
     # Ollama provides eval_count which is roughly equivalent to the number of tokens generated
     # For total tokens, we make a rough estimate based on the input and output
     formatted_usage = %{
-      total_tokens: eval_count
+      total_tokens: eval_count,
+      input_tokens: 0,
+      output_tokens: eval_count
     }
 
     {:ok, [message], formatted_usage}
@@ -231,7 +235,9 @@ defmodule Dantex.Providers.Ollama do
 
     # When eval_count is not provided, we set tokens to 0
     formatted_usage = %{
-      total_tokens: 0
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0
     }
 
     {:ok, [message], formatted_usage}

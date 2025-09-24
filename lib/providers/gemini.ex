@@ -197,7 +197,9 @@ defmodule Dantex.Providers.Gemini do
 
     # Format usage to match our Provider.usage type
     formatted_usage = %{
-      total_tokens: usage_metadata["totalTokenCount"]
+      total_tokens: usage_metadata["totalTokenCount"],
+      input_tokens: usage_metadata["promptTokenCount"] || 0,
+      output_tokens: usage_metadata["candidatesTokenCount"] || 0
     }
 
     {:ok, messages, formatted_usage}
@@ -253,8 +255,9 @@ defmodule Dantex.Providers.Gemini do
 
     # Provide a default usage estimate when actual usage is not available
     estimated_usage = %{
-      # We don't have enough information to make a good estimate
-      total_tokens: 0
+      total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0
     }
 
     {:ok, messages, estimated_usage}

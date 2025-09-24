@@ -203,7 +203,9 @@ defmodule Dantex.Providers.Anthropic do
     messages = parse_content_blocks(content)
     
     formatted_usage = %{
-      total_tokens: usage["input_tokens"] + usage["output_tokens"]
+      total_tokens: usage["input_tokens"] + usage["output_tokens"],
+      input_tokens: usage["input_tokens"],
+      output_tokens: usage["output_tokens"]
     }
 
     {:ok, messages, formatted_usage}

@@ -671,9 +671,9 @@ defmodule Dantex.Agent do
   @spec accumulate_usage(Dantex.Provider.usage(), Dantex.Provider.usage()) :: Dantex.Provider.usage()
   defp accumulate_usage(current_usage, new_usage) do
     %{
-      total_tokens: current_usage.total_tokens + new_usage.total_tokens,
-      input_tokens: current_usage.input_tokens + new_usage.input_tokens,
-      output_tokens: current_usage.output_tokens + new_usage.output_tokens
+      total_tokens: current_usage.total_tokens + Map.get(new_usage, :total_tokens, 0),
+      input_tokens: current_usage.input_tokens + Map.get(new_usage, :input_tokens, 0),
+      output_tokens: current_usage.output_tokens + Map.get(new_usage, :output_tokens, 0)
     }
   end
 
